@@ -31,16 +31,15 @@ TOPICS = [
     "автоматизация рассылок с ботами"
 ]
 
-SYSTEM_PROMPT = """Ты — SMM-менеджер веб-студии WebStudio.
+FALLBACK_TEMPLATES = [
+    "💡 <b>Создание сайтов под ключ</b>\n\nСайт — это лицо вашего бизнеса в интернете. Мы делаем:\n\n\u2022 Лендинги — для одной услуги\n\u2022 Многостраничные — для каталога\n\u2022 Интернет-магазины — для продаж\n\nАдаптивный дизайн, SEO-база, быстрая загрузка — всё включено.\n\n\u0421\u0442\u043e\u0438\u043c\u043e\u0441\u0442\u044c \u2014 \u043e\u0442 $100.\n\n\u0417\u0430\u043a\u0430\u0437\u0430\u0442\u044c: https://uriy-as.org\n\u041f\u043e\u0447\u0442\u0430: uriy.as59@yandex.com",
+]
 
-Чем занимаемся:
-— Создание сайтов под ключ (лендинги, многостраничные, интернет-магазины)
-— Разработка Telegram-ботов с искусственным интеллектом
-— SEO-оптимизация и поддержка сайтов
+PROMPT = """Ты — SMM-менеджер веб-студии WebStudio.
 
-Напиши пост для Telegram-канала @webstudio_chanel.
+Напиши пост для Telegram-канала @webstudio_chanel на тему: "{topic}".
 
-Требования к посту:
+Требования:
 - Язык: русский
 - Длина: 200-400 символов
 - Стиль: полезный, экспертный, без воды
@@ -48,17 +47,12 @@ SYSTEM_PROMPT = """Ты — SMM-менеджер веб-студии WebStudio.
 - В конце контакты:
 🌐 Заказать: https://uriy-as.org
 ✉️ uriy.as59@yandex.com
-- Без хештегов
-- Пиши как живой эксперт, а не реклама"""
+- Без хештегов. Пиши как живой эксперт, а не реклама."""
 
 
-def generate_post():
-    topic = random.choice(TOPICS)
-
+def generate_gemini(topic):
     body = json.dumps({
-        "contents": [{
-            "parts": [{"text": f"{SYSTEM_PROMPT}\n\nТема поста: \"{topic}\""}]
-        }]
+        "contents": [{"parts": [{"text": PROMPT.format(topic=topic)}]}]
     }).encode()
 
     req = urllib.request.Request(
@@ -71,13 +65,9 @@ def generate_post():
         resp = urllib.request.urlopen(req)
         data = json.loads(resp.read())
         return data['candidates'][0]['content']['parts'][0]['text'].strip()
-    except urllib.error.HTTPError as e:
-        err = e.read().decode()
-        print(f"Gemini API error {e.code}: {err}")
-        raise
     except Exception as e:
-        print(f"Error: {e}")
-        raise
+        print(f"Gemini error: {e}")
+        return None
 
 
 def send_post(text):
@@ -97,15 +87,12 @@ def send_post(text):
         resp = urllib.request.urlopen(req)
         result = json.loads(resp.read())
         if result.get('ok'):
-            print(f"OK: Post sent to {CHAT_ID}")
+            print(f"OK: Sent to {CHAT_ID}")
         else:
             print(f"FAIL: {result}")
             exit(1)
     except urllib.error.HTTPError as e:
         print(f"HTTP ERROR: {e.code} {e.read().decode()}")
-        exit(1)
-    except Exception as e:
-        print(f"ERROR: {e}")
         exit(1)
 
 
@@ -117,6 +104,13 @@ if __name__ == '__main__':
         print("ERROR: GEMINI_API_KEY not set")
         exit(1)
 
-    post = generate_post()
-    print(f"Generated:\n{post}\n")
+    topic = random.choice(TOPICS)
+    print(f"Topic: {topic}")
+
+    post = generate_gemini(topic)
+    if not post:
+        print("Falling back to template")
+        post = random.choice(FALLBACK_TEMPLATES)
+
+    print(f"Post:\n{post}\n")
     send_post(post)
