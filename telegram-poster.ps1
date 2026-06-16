@@ -29,7 +29,7 @@ $uri = "https://api.telegram.org/bot$Token/sendMessage"
 $body = @{ chat_id = $ChatId; text = $Post[2]; parse_mode = "HTML" }
 
 try {
-    $result = Invoke-RestMethod -Uri $uri -Method Post -Body $body
+    $result = Invoke-RestMethod -Uri $uri -Method Post -Body $body -TimeoutSec 15
     if ($result.ok) {
         $State.used += $nextIdx
         $State | ConvertTo-Json | Set-Content -Path $StateFile -Encoding UTF8
