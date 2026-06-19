@@ -53,7 +53,7 @@ const counterObserver = new IntersectionObserver((entries) => {
 
 counters.forEach(el => counterObserver.observe(el));
 
-// Modal
+// Modalif (form && modal && modalClose)
 const form = document.getElementById('contactForm');
 const modal = document.getElementById('modal');
 const modalClose = document.getElementById('modalClose');
@@ -86,7 +86,7 @@ modal.addEventListener('click', (e) => {
     }
 });
 
-// Modal
+// Modalif (form && modal && modalClose)
 
 // Visit tracker
 (function() {
