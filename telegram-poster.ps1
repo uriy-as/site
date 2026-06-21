@@ -13,7 +13,7 @@ function Read-JsonFile {
     param([string]$Path)
     if (-not (Test-Path $Path)) { return $null }
     try { return Get-Content $Path -Raw -Encoding UTF8 | ConvertFrom-Json }
-    catch { Write-Status "WARN: Invalid JSON in $Path — $_"; return $null }
+    catch { Write-Status "WARN: Invalid JSON in $Path - $_"; return $null }
 }
 
 function Write-JsonFile {
