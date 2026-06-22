@@ -9,7 +9,12 @@ if ($Remove) {
     return
 }
 
-# Create a new scheduled task for Mon, Wed, Fri, Sat at 08:00
+$token = $env:TG_BOT_TOKEN
+if (-not $token) {
+    Write-Host "ERROR: TG_BOT_TOKEN not found. Set it first: setx TG_BOT_TOKEN your_token_here"
+    exit 1
+}
+
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$ps1Path`""
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday, Wednesday, Friday, Saturday -At 08:10
 $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
@@ -17,5 +22,5 @@ $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccou
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Force
 
 Write-Host "Task '$taskName' created."
-Write-Host "Schedule: Mon, Wed, Fri, Sat at 08:00"
+Write-Host "Schedule: Mon, Wed, Fri, Sat at 08:10"
 Write-Host "Script: $ps1Path"
