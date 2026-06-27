@@ -57,6 +57,22 @@ counters.forEach(el => counterObserver.observe(el));
 const form = document.getElementById('contactForm');
 const modal = document.getElementById('modal');
 const modalClose = document.getElementById('modalClose');
+const modalIcon = document.getElementById('modalIcon');
+const modalText = document.getElementById('modalText');
+
+const modalSuccess = () => {
+    modalIcon.innerHTML = '&#10024;';
+    modalText.textContent = modalText.dataset.i18n === 'modal-thanks'
+        ? (document.documentElement.lang === 'en' ? 'Thank you! We will contact you shortly.' : 'Спасибо! Мы свяжемся с вами в ближайшее время.')
+        : modalText.dataset.i18n;
+};
+
+const modalError = () => {
+    modalIcon.innerHTML = '&#10060;';
+    modalText.textContent = document.documentElement.lang === 'en'
+        ? 'Server error. Try again later or write to Telegram.'
+        : 'Ошибка сервера. Попробуйте позже или напишите в Telegram.';
+};
 
 if (form && modal && modalClose) {
     form.addEventListener('submit', (e) => {
@@ -72,7 +88,10 @@ if (form && modal && modalClose) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
             mode: 'cors'
-        }).catch(() => {});
+        }).then(r => {
+            if (r.ok) modalSuccess();
+            else modalError();
+        }).catch(() => modalError());
         modal.classList.add('modal--open');
         form.reset();
     });
@@ -221,6 +240,12 @@ if (form && modal && modalClose) {
         'footer-bot': { ru: '@NevWebStudio_bot — бот ответит на все интересующие вопросы', en: '@NevWebStudio_bot — the bot will answer all your questions' },
         'modal-thanks': { ru: 'Спасибо! Мы свяжемся с вами в ближайшее время.', en: 'Thank you! We will contact you shortly.' },
         'modal-btn': { ru: 'Отлично', en: 'Great' },
+        'contact-alt-title': { ru: 'Выберите удобный канал', en: 'Choose your preferred channel' },
+        'contact-alt-desc': { ru: 'Свяжитесь через любой мессенджер', en: 'Reach us via any messenger' },
+        'contact-alt-tg': { ru: 'Telegram', en: 'Telegram' },
+        'contact-alt-bot': { ru: 'Telegram-бот', en: 'Telegram Bot' },
+        'contact-alt-whatsapp': { ru: 'WhatsApp', en: 'WhatsApp' },
+        'contact-alt-viber': { ru: 'Viber', en: 'Viber' },
         'tg-float-text': { ru: 'Telegram', en: 'Telegram' },
         'chat-btn-text': { ru: 'AI-чат', en: 'AI Chat' },
         'chat-title': { ru: 'Чат с WebStudio AI', en: 'Chat with WebStudio AI' },
