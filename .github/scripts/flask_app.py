@@ -43,6 +43,10 @@ def send_tg(text):
     except:
         pass
 
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
+
 @app.errorhandler(500)
 def handle_500(e):
     send_tg(f'<b>❌ Что-то пошло не так</b>\nСтраница: {request.path}')
@@ -454,3 +458,4 @@ tr:hover {{ background:#f0f7ff; }}
 </html>'''
 
 send_tg(f'<b>🔄 Сервер запущен</b>\n{datetime.now().strftime("%d.%m.%Y %H:%M")}')
+
