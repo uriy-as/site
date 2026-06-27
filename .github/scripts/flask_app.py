@@ -3,6 +3,7 @@ import html
 import json
 import os
 import re
+import time
 from collections import Counter
 from datetime import datetime, date
 
@@ -30,6 +31,27 @@ LEADS_FILE = '/home/Astap/mysite/leads.json'
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 TELEGRAM_TOKEN = os.environ.get('TG_BOT_TOKEN') or ''
 ADMIN_CHAT_ID = '1994948658'
+_last_notify = 0.0
+
+def send_tg(text):
+    if not TELEGRAM_TOKEN:
+        return
+    try:
+        requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage',
+            json={'chat_id': ADMIN_CHAT_ID, 'text': text, 'parse_mode': 'HTML', 'disable_web_page_preview': True},
+            timeout=10)
+    except:
+        pass
+
+@app.errorhandler(500)
+def handle_500(e):
+    send_tg(f'<b>❌ Что-то пошло не так</b>\nСтраница: {request.path}')
+    return jsonify({'error': 'Internal server error'}), 500
+
+@app.errorhandler(404)
+def handle_404(e):
+    send_tg(f'<b>⚠️ Страница не найдена</b>\n{request.path}')
+    return jsonify({'error': 'Not found'}), 404
 
 SYSTEM_PROMPT = """�� - ����������� ��������� ������ WebStudio (uriy-as.org). ������� �� ������� �����. ������ ������ ���� ��������������, ��������� ���������� ����� � ������. ������� �� ������ "���������� � ���������" - �� ��� ������� �� ������� �������.
 ��������� ���������� ���� ��� �������:
@@ -115,34 +137,57 @@ def pixel():
     ref = request.args.get('ref', '')
     screen = request.args.get('screen', '')
     ua = request.headers.get('User-Agent', '')
-    visits = load_visits()
-    visits.append({
-        'page': page,
-        'ref': ref,
-        'screen': screen,
-        'device': detect_device(ua),
-        'ip': request.remote_addr or '',
-        'ua': ua,
-        'date': datetime.now().isoformat()
-    })
-    save_visits(visits)
+    dev = detect_device(ua)
+    if dev not in ('bot', 'unknown'):
+        visits = load_visits()
+        visits.append({
+            'page': page, 'ref': ref, 'screen': screen, 'device': dev,
+            'ip': request.remote_addr or '', 'ua': ua,
+            'date': datetime.now().isoformat()
+        })
+        save_visits(visits)
+        if page != '/':
+            global _last_notify
+            now = time.time()
+            if now - _last_notify > 60:
+                _last_notify = now
+                msg = f'<b>👤 Новый визит</b>\nСтраница: {page}\nУстройство: {dev}'
+                if screen:
+                    msg += f' ({screen})'
+                if ref:
+                    msg += f'\nReferrer: {ref}'
+                msg += '\n<a href="https://astap.pythonanywhere.com/stats">📊 Статистика</a>'
+                send_tg(msg)
     return Response(PIXEL_GIF, mimetype='image/gif')
 
 @app.route('/visit', methods=['POST'])
 def visit():
     data = request.json or {}
     ua = request.headers.get('User-Agent', '')
-    visits = load_visits()
-    visits.append({
-        'page': data.get('page', '/'),
-        'ref': data.get('ref', ''),
-        'screen': data.get('screen', ''),
-        'device': detect_device(ua),
-        'ip': request.remote_addr or '',
-        'ua': ua,
-        'date': datetime.now().isoformat()
-    })
-    save_visits(visits)
+    dev = detect_device(ua)
+    page = data.get('page', '/')
+    if dev not in ('bot', 'unknown'):
+        visits = load_visits()
+        visits.append({
+            'page': page, 'ref': data.get('ref', ''), 'screen': data.get('screen', ''), 'device': dev,
+            'ip': request.remote_addr or '', 'ua': ua,
+            'date': datetime.now().isoformat()
+        })
+        save_visits(visits)
+        if page != '/':
+            global _last_notify
+            now = time.time()
+            if now - _last_notify > 60:
+                _last_notify = now
+                ref = data.get('ref', '')
+                screen = data.get('screen', '')
+                msg = f'<b>👤 Новый визит</b>\nСтраница: {page}\nУстройство: {dev}'
+                if screen:
+                    msg += f' ({screen})'
+                if ref:
+                    msg += f'\nReferrer: {ref}'
+                msg += '\n<a href="https://astap.pythonanywhere.com/stats">📊 Статистика</a>'
+                send_tg(msg)
     return jsonify({'ok': True})
 
 @app.route('/api/lead', methods=['POST'])
@@ -161,6 +206,19 @@ def save_lead():
         'date': datetime.now().isoformat()
     })
     save_leads(leads)
+    parts = ['<b>📩 Новая заявка!</b>']
+    name = data.get('name', '')
+    phone = data.get('phone', '')
+    email = data.get('email', '')
+    if name:
+        parts.append(f'Имя: {name}')
+    if phone:
+        parts.append(f'Телефон: {phone}')
+    if email:
+        parts.append(f'Email: {email}')
+    parts.append(f'Сообщение: {message}')
+    parts.append('<a href="https://astap.pythonanywhere.com/stats">📊 Статистика</a>')
+    send_tg('\n'.join(parts))
     return jsonify({'ok': True, 'count': len(load_leads())})
 
 @app.route('/api/chat', methods=['POST'])
@@ -269,7 +327,7 @@ def telegram_webhook():
         if text == '/start':
             requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage', json={
                 'chat_id': chat_id,
-                'text': 'Bot works. New messages from clients will appear here.'
+                'text': 'Бот работает. Новые сообщения от клиентов будут появляться здесь.'
             })
         return '', 200
 
@@ -287,7 +345,7 @@ def telegram_webhook():
     username = msg['chat'].get('username') or msg['chat'].get('first_name', 'Unknown')
     requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage', json={
         'chat_id': int(ADMIN_CHAT_ID),
-        'text': f'<b>New question from bot</b>\n\nFrom: @{username}\n\n{text}',
+        'text': f'<b>Новый вопрос от клиента</b>\n\nОт: @{username}\n\n{text}',
         'parse_mode': 'HTML'
     })
 
@@ -373,24 +431,26 @@ tr:hover {{ background:#f0f7ff; }}
 </style>
 </head>
 <body>
-<h1>&#x1f4ca; ���������� WebStudio</h1>
+<h1>&#x1f4ca; Статистика WebStudio</h1>
 <div class="stats">
-    <div class="card"><div class="num">{total}</div><div class="label">����� �������</div></div>
-    <div class="card"><div class="num">{today_count}</div><div class="label">�������</div></div>
-    <div class="card"><div class="num">{unique_days}</div><div class="label">���� � �������</div></div>
-    <div class="card"><div class="num">{unique_ips}</div><div class="label">���������� IP</div></div>
+    <div class="card"><div class="num">{total}</div><div class="label">Всего визитов</div></div>
+    <div class="card"><div class="num">{today_count}</div><div class="label">Сегодня</div></div>
+    <div class="card"><div class="num">{unique_days}</div><div class="label">Дней в записи</div></div>
+    <div class="card"><div class="num">{unique_ips}</div><div class="label">Уникальных IP</div></div>
 </div>
 
-<h2>&#x1f4cc; ���������� �� ���������</h2>
-<table><thead><tr><th>��������</th><th>�������</th></tr></thead><tbody>{page_rows}</tbody></table>
+<h2>&#x1f4cc; Посещения по страницам</h2>
+<table><thead><tr><th>Страница</th><th>Визитов</th></tr></thead><tbody>{page_rows}</tbody></table>
 
-<h2>&#x1f4f1; �� �����������</h2>
-<table><thead><tr><th>���</th><th>�������</th></tr></thead><tbody>{device_rows}</tbody></table>
+<h2>&#x1f4f1; По устройствам</h2>
+<table><thead><tr><th>Тип</th><th>Визитов</th></tr></thead><tbody>{device_rows}</tbody></table>
 
-<h2>&#x1f4e8; ������ � �����</h2>
-<table><thead><tr><th>����</th><th>��������</th><th>���������</th><th>IP</th></tr></thead><tbody>{lead_rows}</tbody></table>
+<h2>&#x1f4e8; Заявки</h2>
+<table><thead><tr><th>Дата</th><th>Контакты</th><th>Сообщение</th><th>IP</th></tr></thead><tbody>{lead_rows}</tbody></table>
 
-<h2>&#x1f4c4; ��������� 50 �������</h2>
-<table><thead><tr><th>����</th><th>��������</th><th>����������</th><th>IP</th></tr></thead><tbody>{rows}</tbody></table>
+<h2>&#x1f4c4; Последние 50 визитов</h2>
+<table><thead><tr><th>Дата</th><th>Страница</th><th>Устройство</th><th>IP</th></tr></thead><tbody>{rows}</tbody></table>
 </body>
 </html>'''
+
+send_tg(f'<b>🔄 Сервер запущен</b>\n{datetime.now().strftime("%d.%m.%Y %H:%M")}')
