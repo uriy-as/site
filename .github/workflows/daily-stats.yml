@@ -1,0 +1,20 @@
+name: Daily Stats
+
+on:
+  schedule:
+    - cron: '10 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  stats:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - run: python .github/scripts/daily-stats.py
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          ADMIN_CHAT_ID: ${{ secrets.ADMIN_CHAT_ID }}
