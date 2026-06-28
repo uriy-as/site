@@ -263,27 +263,28 @@ def ask_gemini(text):
     return None
 
 def ask_hf(text):
-    prompt = f"""{SYSTEM_PROMPT}
-
-������ ������������: {text}
-
-������ �� ������ ������������ ��������, ��������� ���������� ����."""
+    prompt = f"""{SYSTEM_PROMPT}\n\nВопрос клиента: {text}\n\nОтветь на вопрос клиента кратко, по-русски."""
     headers = {}
     hf_token = os.environ.get('HF_API_TOKEN', '')
     if hf_token:
         headers['Authorization'] = f'Bearer {hf_token}'
     models = [
-        'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
+        'Qwen/Qwen2.5-1.5B-Instruct',
+        'Qwen/Qwen2.5-0.5B-Instruct',
         'google/flan-t5-large',
-        'microsoft/DialoGPT-medium'
+        'HuggingFaceH4/zephyr-7b-beta',
     ]
     for model in models:
         try:
+            payload = {
+                'inputs': prompt,
+                'parameters': {'max_new_tokens': 500, 'temperature': 0.7, 'return_full_text': False},
+            }
             r = requests.post(
                 f'https://api-inference.huggingface.co/models/{model}',
-                json={'inputs': prompt, 'parameters': {'max_new_tokens': 400, 'temperature': 0.7}},
+                json=payload,
                 headers=headers,
-                timeout=60
+                timeout=90
             )
             if r.status_code == 200:
                 data = r.json()
@@ -294,15 +295,9 @@ def ask_hf(text):
                 else:
                     gen = ''
                 if gen:
-                    for sep in ['������ �� ������', '�����:', '������ ������������:']:
-                        idx = gen.find(sep)
-                        if idx != -1:
-                            after = gen[idx+len(sep):].strip()
-                            parts = after.split('\n')
-                            return '\n'.join(p for p in parts if p.strip())[:600]
                     return gen.strip()[:600]
             elif r.status_code == 503:
-                model_loading = True
+                continue
         except:
             continue
     return None
@@ -385,7 +380,7 @@ def get_ga4_metrics():
     try:
         from google.analytics.data_v1beta import BetaAnalyticsDataClient
         from google.analytics.data_v1beta.types import (
-            DateRange, Dimension, Metric, RunReportRequest
+            Dimension, Metric, RunRealtimeReportRequest
         )
         from google.oauth2.service_account import Credentials
         import json as j
@@ -393,35 +388,27 @@ def get_ga4_metrics():
         creds = Credentials.from_service_account_info(j.loads(key_json))
         client = BetaAnalyticsDataClient(credentials=creds)
 
-        today = date.today()
-        week_ago = today - timedelta(days=7)
-
-        request = RunReportRequest(
+        request = RunRealtimeReportRequest(
             property=f'properties/{GA_PROPERTY_ID}',
-            date_ranges=[DateRange(start_date=week_ago.isoformat(), end_date=today.isoformat())],
-            metrics=[Metric(name='activeUsers'), Metric(name='screenPageViews'), Metric(name='newUsers')],
-            dimensions=[Dimension(name='pagePath')]
+            metrics=[Metric(name='activeUsers'), Metric(name='screenPageViews')],
+            dimensions=[Dimension(name='unifiedScreenName')]
         )
-        response = client.run_report(request)
+        response = client.run_realtime_report(request)
 
         total_users = 0
         total_views = 0
-        total_new = 0
         pages = []
         for row in response.rows:
             path = row.dimension_values[0].value
             users = int(row.metric_values[0].value)
             views = int(row.metric_values[1].value)
-            new_u = int(row.metric_values[2].value)
             total_users += users
             total_views += views
-            total_new += new_u
-            if path != '/':
-                pages.append((path, views, users))
+            pages.append((path, views, users))
 
         pages.sort(key=lambda x: x[1], reverse=True)
 
-        return (total_users, total_views, total_new, pages[:10])
+        return (total_users, total_views, 0, pages[:10])
     except Exception as e:
         print(f'GA4 error: {e}')
         return None, None, None, None
@@ -478,7 +465,7 @@ def stats():
         for path, views, users in ga4_pages:
             ga4_page_rows += f'<tr><td>{path}</td><td>{views}</td><td>{users}</td></tr>'
         ga4_block = f'''
-<h2>&#x1f4e1; Google Analytics (за 7 дней)</h2>
+<h2>&#x1f4e1; Google Analytics (за последние 30 минут)</h2>
 <div class="stats">
     <div class="card"><div class="num">{ga4_users}</div><div class="label">Пользователи</div></div>
     <div class="card"><div class="num">{ga4_views}</div><div class="label">Просмотры</div></div>
@@ -531,4 +518,6 @@ tr:hover {{ background:#f0f7ff; }}
 </html>'''
 
 send_tg(f'<b>🔄 Сервер запущен</b>\n{datetime.now().strftime("%d.%m.%Y %H:%M")}')
+
+
 
