@@ -5,7 +5,7 @@ import os
 import re
 import time
 from collections import Counter
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 import requests
 from flask import Flask, request, jsonify, Response
@@ -368,6 +368,56 @@ def delete_webhook():
     r = requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook')
     return jsonify(r.json())
 
+GA_PROPERTY_ID = '542628161'
+
+def get_ga4_metrics():
+    key_json = os.environ.get('GA_SERVICE_KEY', '')
+    if not key_json:
+        return None, None, None
+    try:
+        from google.analytics.data_v1beta import BetaAnalyticsDataClient
+        from google.analytics.data_v1beta.types import (
+            DateRange, Dimension, Metric, RunReportRequest
+        )
+        from google.oauth2.service_account import Credentials
+        import json as j
+
+        creds = Credentials.from_service_account_info(j.loads(key_json))
+        client = BetaAnalyticsDataClient(credentials=creds)
+
+        today = date.today()
+        week_ago = today - timedelta(days=7)
+
+        request = RunReportRequest(
+            property=f'properties/{GA_PROPERTY_ID}',
+            date_ranges=[DateRange(start_date=week_ago.isoformat(), end_date=today.isoformat())],
+            metrics=[Metric(name='activeUsers'), Metric(name='screenPageViews'), Metric(name='newUsers')],
+            dimensions=[Dimension(name='pagePath')]
+        )
+        response = client.run_report(request)
+
+        total_users = 0
+        total_views = 0
+        total_new = 0
+        pages = []
+        for row in response.rows:
+            path = row.dimension_values[0].value
+            users = int(row.metric_values[0].value)
+            views = int(row.metric_values[1].value)
+            new_u = int(row.metric_values[2].value)
+            total_users += users
+            total_views += views
+            total_new += new_u
+            if path != '/':
+                pages.append((path, views, users))
+
+        pages.sort(key=lambda x: x[1], reverse=True)
+
+        return (total_users, total_views, total_new, pages[:10])
+    except Exception as e:
+        print(f'GA4 error: {e}')
+        return None, None, None
+
 @app.route('/stats')
 @app.route('/stats.html')
 def stats():
@@ -413,12 +463,27 @@ def stats():
         contact_info = ' | '.join(filter(None, [name, phone, email]))
         lead_rows += f'<tr><td>{d}</td><td>{html.escape(contact_info)}</td><td>{html.escape(msg)}</td><td>{ip}</td></tr>'
 
+    ga4_users, ga4_views, ga4_new, ga4_pages = get_ga4_metrics()
+    ga4_block = ''
+    if ga4_users is not None:
+        ga4_page_rows = ''
+        for path, views, users in ga4_pages:
+            ga4_page_rows += f'<tr><td>{path}</td><td>{views}</td><td>{users}</td></tr>'
+        ga4_block = f'''
+<h2>&#x1f4e1; Google Analytics (за 7 дней)</h2>
+<div class="stats">
+    <div class="card"><div class="num">{ga4_users}</div><div class="label">Пользователи</div></div>
+    <div class="card"><div class="num">{ga4_views}</div><div class="label">Просмотры</div></div>
+    <div class="card"><div class="num">{ga4_new}</div><div class="label">Новые</div></div>
+</div>
+<table><thead><tr><th>Страница</th><th>Просмотры</th><th>Пользователи</th></tr></thead><tbody>{ga4_page_rows}</tbody></table>'''
+
     return f'''<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>���������� WebStudio</title>
+<title>Статистика WebStudio</title>
 <style>
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 body {{ font-family:Arial,Helvetica,sans-serif; background:#f5f5f5; color:#222; padding:20px; line-height:1.5; }}
@@ -442,7 +507,7 @@ tr:hover {{ background:#f0f7ff; }}
     <div class="card"><div class="num">{unique_days}</div><div class="label">Дней в записи</div></div>
     <div class="card"><div class="num">{unique_ips}</div><div class="label">Уникальных IP</div></div>
 </div>
-
+{ga4_block}
 <h2>&#x1f4cc; Посещения по страницам</h2>
 <table><thead><tr><th>Страница</th><th>Визитов</th></tr></thead><tbody>{page_rows}</tbody></table>
 
