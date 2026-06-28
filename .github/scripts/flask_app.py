@@ -370,10 +370,18 @@ def delete_webhook():
 
 GA_PROPERTY_ID = '542628161'
 
+GA_KEY_FILE = '/home/Astap/mysite/ga-key.json'
+
 def get_ga4_metrics():
     key_json = os.environ.get('GA_SERVICE_KEY', '')
     if not key_json:
-        return None, None, None
+        try:
+            with open(GA_KEY_FILE) as f:
+                key_json = f.read()
+        except (FileNotFoundError, IOError):
+            pass
+    if not key_json:
+        return None, None, None, None
     try:
         from google.analytics.data_v1beta import BetaAnalyticsDataClient
         from google.analytics.data_v1beta.types import (
@@ -416,7 +424,7 @@ def get_ga4_metrics():
         return (total_users, total_views, total_new, pages[:10])
     except Exception as e:
         print(f'GA4 error: {e}')
-        return None, None, None
+        return None, None, None, None
 
 @app.route('/stats')
 @app.route('/stats.html')
