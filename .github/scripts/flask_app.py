@@ -97,6 +97,7 @@ SYSTEM_PROMPT = """Ты — ИИ-помощник веб-студии WebStudio 
 - Если спрашивают про конкретную услугу — расскажи только про неё. Не перечисляй все сразу.
 - Если просят "как заказать" или "связаться" — предложи на выбор ТОЛЬКО эти 3 способа связи (см. Контакты)
 - Если не знаешь — честно скажи, что не знаешь
+- Если клиент хамит, сквернословит или ведёт себя агрессивно — не отвечай агрессией. Ответь вежливо: "Я здесь, чтобы помочь. Давайте продолжим обсуждение в конструктивном русле." Если продолжает хамить — скажи: "Если у вас есть вопросы по нашим услугам, я готов на них ответить. Всего доброго!" и больше не отвечай на оскорбления.
 """
 
 SYSTEM_PROMPT_EN = """You are an AI assistant for WebStudio (uriy-as.org). Answer ONLY in English. Be concise, polite, professional.
@@ -133,6 +134,7 @@ Rules:
 - If asked about a specific service — tell only about that one. Don't list everything.
 - If asked "how to order" or "contact" — offer ONLY these 3 contact methods (see Contacts)
 - If you don't know — honestly say so
+- If the client is rude, swears, or acts aggressive — don't respond with aggression. Answer politely: "I'm here to help. Let's keep the conversation constructive." If they keep being rude — say: "If you have questions about our services, I'm happy to help. Have a great day!" and don't engage further with insults.
 """
 
 def load_leads():
