@@ -29,6 +29,12 @@ STATS_FILE = '/home/Astap/mysite/visits.json'
 LEADS_FILE = '/home/Astap/mysite/leads.json'
 
 COHERE_API_KEY = os.environ.get('COHERE_API_KEY', '')
+if not COHERE_API_KEY:
+    try:
+        with open('/home/Astap/mysite/cohere_key.txt') as f:
+            COHERE_API_KEY = f.read().strip()
+    except:
+        pass
 TELEGRAM_TOKEN = os.environ.get('TG_BOT_TOKEN') or ''
 ADMIN_CHAT_ID = '1994948658'
 _last_notify = 0.0
