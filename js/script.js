@@ -138,8 +138,32 @@ if (form && modal && modalClose) {
 
     if (!btn || !popup || !close || !body || !form || !input) return;
 
+    var greetingTimer = null;
+
+    function getGreeting() {
+        var lang = window.currentLang || 'ru';
+        return lang === 'en' ? 'Hello! Ask your question.' : 'Здравствуйте! Задайте ваш вопрос.';
+    }
+
+    function addGreeting() {
+        if (!body.querySelector('.chat-msg--greeting')) {
+            var gr = document.createElement('div');
+            gr.className = 'chat-msg chat-msg--bot chat-msg--greeting';
+            gr.textContent = getGreeting();
+            body.insertBefore(gr, body.firstChild);
+        }
+    }
+
     btn.addEventListener('click', () => {
+        var isOpen = popup.classList.contains('chat-popup--open');
         popup.classList.toggle('chat-popup--open');
+        if (!isOpen && !greetingTimer && !body.querySelector('.chat-msg--greeting')) {
+            greetingTimer = setTimeout(addGreeting, 7000);
+        }
+        if (isOpen && greetingTimer) {
+            clearTimeout(greetingTimer);
+            greetingTimer = null;
+        }
     });
 
     close.addEventListener('click', () => {
@@ -317,7 +341,8 @@ if (form && modal && modalClose) {
         'svc-promo-l4': { ru: 'Рассылка по каталогам', en: 'Directory submission' },
         'svc-promo-l5': { ru: 'Контент-план на месяц', en: 'Monthly content plan' },
         'error-404-title': { ru: 'Страница не найдена', en: 'Page not found' },
-        'error-404-btn': { ru: 'На главную', en: 'Go home' }
+        'error-404-btn': { ru: 'На главную', en: 'Go home' },
+        'footer-privacy': { ru: 'Политика конфиденциальности', en: 'Privacy Policy' }
     };
 
     window.translations = translations;
