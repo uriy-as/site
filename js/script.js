@@ -164,7 +164,7 @@ if (form && modal && modalClose) {
             const r = await fetch('https://Astap.pythonanywhere.com/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: msg }),
+                body: JSON.stringify({ message: msg, lang: window.currentLang || 'ru' }),
                 mode: 'cors',
                 signal: ctrl.signal
             });
@@ -325,6 +325,7 @@ if (form && modal && modalClose) {
 
     function applyLang(l) {
         lang = l;
+        window.currentLang = l;
         try { localStorage.setItem(LANG_KEY, l); } catch(e) {}
 
         document.querySelectorAll('[data-i18n]').forEach(el => {

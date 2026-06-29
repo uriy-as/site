@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 import html
 import json
 import os
@@ -28,7 +28,7 @@ def cors_preflight():
 STATS_FILE = '/home/Astap/mysite/visits.json'
 LEADS_FILE = '/home/Astap/mysite/leads.json'
 
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+COHERE_API_KEY = os.environ.get('COHERE_API_KEY', '')
 TELEGRAM_TOKEN = os.environ.get('TG_BOT_TOKEN') or ''
 ADMIN_CHAT_ID = '1994948658'
 _last_notify = 0.0
@@ -91,6 +91,33 @@ SYSTEM_PROMPT = """�� - ����������� ������
 - �� ������� � ������ ������� ���������� ���
 - ���� ���������� "��� ��������" - �������� �������� � Telegram @uriy_as59
 - ���� ������ �� �� ������� - ������ ��� ������� ���������
+"""
+
+SYSTEM_PROMPT_EN = """You are an AI assistant for WebStudio (uriy-as.org). Answer in English. Be concise, polite, and professional. Do NOT say "Contact us in Telegram" - you should help clients directly.
+Key information about services and pricing:
+Prices in USD:
+1. Website development:
+   - Business card website (1-3 pages): from $250, delivery 3-5 days
+   - Full website (landing page, online store, corporate): from $600, delivery 7-14 days
+2. Telegram bots:
+   - Business card bot (5 menu items, auto-replies): from $130, delivery 2-3 days
+   - GPT Telegram bot (AI consultant, order processing, payments): from $400, delivery 5-10 days
+3. Science articles for Telegram:
+   - Up to 2000 characters: from $50, delivery 1 day
+   - 2000-4000 characters: from $80, delivery 1-2 days
+   - 4000-7000 characters: from $130, delivery 1-2 days
+   - From 7000 characters: from $200, delivery 2 days
+   Pack of 10 articles - 20% off
+4. SEO promotion: from $70/month
+Promo: 30% off for the first 5 customers!
+Contacts: @uriy_as59 (Telegram for inquiries), uriy.as59@yandex.com, @NevWebStudio_bot
+Channel: @webstudio_chanel
+Payment: USD, RUB, EUR, USDT, cryptocurrency.
+Rules:
+- Do not make up prices - use only the prices above
+- Do not make up services - suggest what we actually offer
+- If asked "how to order" - redirect to Telegram @uriy_as59
+- If something is not in your knowledge - honestly say so
 """
 
 def load_leads():
@@ -229,35 +256,57 @@ def save_lead():
 def chat():
     data = request.json or {}
     message = data.get('message', '')
+    lang = data.get('lang', 'ru')
     if not message:
         return jsonify({'reply': '�������� ��� ������.'})
-    reply = ask_ai(message)
+    reply = ask_ai(message, lang)
     return jsonify({'reply': reply})
 
-def ask_gemini(text):
-    payload = {
-        'contents': [{
-            'parts': [{'text': f'{SYSTEM_PROMPT}\n\n������ ������������: {text}'}]
-        }],
-        'generationConfig': {
-            'maxOutputTokens': 600,
-            'temperature': 0.8
-        }
-    }
+@app.route('/api/diag')
+def diag():
+    import traceback
+    info = {'cohere_key_set': bool(COHERE_API_KEY), 'cohere_key_preview': COHERE_API_KEY[:8] + '...' if COHERE_API_KEY else ''}
+    try:
+        r = requests.post('https://api.cohere.com/v1/chat',
+            json={'message': 'Say hello in Russian', 'model': 'command-r-08-2024'},
+            headers={'Authorization': f'Bearer {COHERE_API_KEY}'}, timeout=10)
+        info['cohere_status'] = r.status_code
+        info['cohere_body'] = r.text[:500]
+    except Exception as e:
+        info['cohere_error'] = str(e)
+        info['cohere_traceback'] = traceback.format_exc()
+    return jsonify(info)
+
+
+
+def ask_cohere(text):
     try:
         r = requests.post(
-            'https://generativelanguage.googleapis.com/v1/models/gemini-3.1-flash-lite:generateContent?key=' + GEMINI_API_KEY,
-            json=payload,
+            'https://api.cohere.com/v1/chat',
+            json={'message': f'{SYSTEM_PROMPT}\n\nВопрос клиента: {text}', 'model': 'command-r-08-2024'},
+            headers={'Authorization': f'Bearer {COHERE_API_KEY}'},
             timeout=30
         )
         if r.status_code == 200:
             data = r.json()
-            candidates = data.get('candidates', [])
-            if candidates:
-                parts = candidates[0].get('content', {}).get('parts', [])
-                texts = [p['text'] for p in parts if 'text' in p]
-                if texts:
-                    return '\n'.join(texts)
+            if data.get('text'):
+                return data['text']
+    except:
+        pass
+    return None
+
+def ask_cohere_en(text):
+    try:
+        r = requests.post(
+            'https://api.cohere.com/v1/chat',
+            json={'message': f'{SYSTEM_PROMPT_EN}\n\nClient question: {text}', 'model': 'command-r-08-2024'},
+            headers={'Authorization': f'Bearer {COHERE_API_KEY}'},
+            timeout=30
+        )
+        if r.status_code == 200:
+            data = r.json()
+            if data.get('text'):
+                return data['text']
     except:
         pass
     return None
@@ -284,7 +333,7 @@ def ask_hf(text):
                 f'https://api-inference.huggingface.co/models/{model}',
                 json=payload,
                 headers=headers,
-                timeout=90
+                timeout=15
             )
             if r.status_code == 200:
                 data = r.json()
@@ -302,13 +351,21 @@ def ask_hf(text):
             continue
     return None
 
-def ask_ai(text):
+def ask_ai(text, lang='ru'):
+    if lang == 'en':
+        reply = ask_cohere_en(text)
+        if reply:
+            return reply
+    else:
+        reply = ask_cohere(text)
+        if reply:
+            return reply
     reply = ask_hf(text)
     if reply:
         return reply
-    reply = ask_gemini(text)
-    if reply:
-        return reply
+    if lang == 'en':
+        return ('Sorry, the AI assistant is temporarily unavailable. '
+                'Contact us via Telegram: @uriy_as59, and we will answer you.')
     return ('��������, AI-��������� �������� ����������. '
             '�������� ��� � Telegram: @uriy_as59, � �� ������� �������.')
 
