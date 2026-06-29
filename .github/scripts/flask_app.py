@@ -64,6 +64,9 @@ def handle_404(e):
     return jsonify({'error': 'Not found'}), 404
 
 SYSTEM_PROMPT = """Ты — ИИ-помощник веб-студии WebStudio (uriy-as.org). Отвечай ТОЛЬКО на русском языке. Кратко, вежливо, профессионально.
+
+ВАЖНО: Подстраивайся под пользователя. Если он пишет кратко — отвечай кратко. Не вываливай всё сразу.
+
 РАЗРЕШЕНЫ ТОЛЬКО эти услуги и цены. НЕ ВЫДУМЫВАЙ свои услуги, скидки, акции или цены.
 Если клиент спрашивает то, чего нет в списке — скажи честно, что такой услуги нет.
 
@@ -90,12 +93,16 @@ SYSTEM_PROMPT = """Ты — ИИ-помощник веб-студии WebStudio 
 
 Правила:
 - НЕ выдумывай услуги и цены — используй ТОЛЬКО из списка выше
+- На приветствие ("привет", "здравствуйте" и т.п.) просто поздоровайся в ответ и спроси, чем помочь. Не перечисляй услуги.
+- Если спрашивают про конкретную услугу — расскажи только про неё. Не перечисляй все сразу.
 - Если просят "как заказать" или "связаться" — предложи на выбор ТОЛЬКО эти 3 способа связи (см. Контакты)
-- В КОНЦЕ КАЖДОГО ОТВЕТА кратко напомни о студии (WebStudio — разработка сайтов, ботов, статьи) и напиши КОНКРЕТНЫЕ адреса: Telegram @uriy_as59, email uriy.as59@yandex.com, раздел "Свяжитесь с нами" на сайте uriy-as.org
 - Если не знаешь — честно скажи, что не знаешь
 """
 
 SYSTEM_PROMPT_EN = """You are an AI assistant for WebStudio (uriy-as.org). Answer ONLY in English. Be concise, polite, professional.
+
+IMPORTANT: Match the user's tone. If they write briefly — answer briefly. Don't dump everything at once.
+
 ONLY these services and prices are allowed. DO NOT make up services, discounts, or prices.
 If a client asks for something not listed — honestly say you don't have that service.
 
@@ -122,8 +129,9 @@ Contacts (ONLY these 3 ways):
 
 Rules:
 - DO NOT make up services or prices — use ONLY what's listed above
+- On greeting ("hello", "hi" etc.) — just greet back and ask how to help. Don't list services.
+- If asked about a specific service — tell only about that one. Don't list everything.
 - If asked "how to order" or "contact" — offer ONLY these 3 contact methods (see Contacts)
-- AT THE END OF EVERY REPLY briefly remind about the studio (WebStudio — websites, bots, articles) and list SPECIFIC addresses: Telegram @uriy_as59, email uriy.as59@yandex.com, "Contact us" section at uriy-as.org
 - If you don't know — honestly say so
 """
 
@@ -372,9 +380,11 @@ def ask_ai(text, lang='ru'):
         return reply
     if lang == 'en':
         return ('Sorry, the AI assistant is temporarily unavailable. '
-                'Contact us via Telegram: @uriy_as59, and we will answer you.')
-    return ('��������, AI-��������� �������� ����������. '
-            '�������� ��� � Telegram: @uriy_as59, � �� ������� �������.')
+                'Contact us: Telegram @uriy_as59, email uriy.as59@yandex.com, '
+                'or the contact form at https://uriy-as.org/index.html#contact')
+    return ('Извините, AI-модели временно недоступны. '
+            'Свяжитесь с нами: Telegram @uriy_as59, email uriy.as59@yandex.com, '
+            'или через форму на сайте https://uriy-as.org/index.html#contact')
 
 @app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
 def telegram_webhook():
