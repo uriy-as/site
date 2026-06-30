@@ -30,6 +30,7 @@ const counterObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
         if (entry.isIntersecting) {
             const el = entry.target;
+            if (!el.dataset.target) return;
             const target = +el.dataset.target;
             const duration = 1500;
             const step = target / (duration / 16);
@@ -176,10 +177,10 @@ if (form && modal && modalClose) {
         if (!msg) return;
 
         input.value = '';
-        body.innerHTML += '<div class="chat-msg chat-msg--user">' + escapeHtml(msg) + '</div>';
+        body.insertAdjacentHTML('beforeend', '<div class="chat-msg chat-msg--user">' + escapeHtml(msg) + '</div>');
         body.scrollTop = body.scrollHeight;
 
-        body.innerHTML += '<div class="chat-msg chat-msg--bot"><em>Печатает...</em></div>';
+        body.insertAdjacentHTML('beforeend', '<div class="chat-msg chat-msg--bot"><em>Печатает...</em></div>');
         body.scrollTop = body.scrollHeight;
 
         try {
@@ -194,11 +195,11 @@ if (form && modal && modalClose) {
             });
             const data = await r.json();
             body.removeChild(body.lastChild);
-            body.innerHTML += '<div class="chat-msg chat-msg--bot">' + escapeHtml(data.reply) + '</div>';
+            body.insertAdjacentHTML('beforeend', '<div class="chat-msg chat-msg--bot">' + escapeHtml(data.reply) + '</div>');
         } catch(e) {
             body.removeChild(body.lastChild);
             var errMsg = 'Извините, сервер временно недоступен. Напишите нам в Telegram: <a href="https://t.me/uriy_as59" target="_blank" style="color:#6c63ff;">@uriy_as59</a>';
-            body.innerHTML += '<div class="chat-msg chat-msg--bot" style="font-size:0.85rem;">' + errMsg + '</div>';
+            body.insertAdjacentHTML('beforeend', '<div class="chat-msg chat-msg--bot" style="font-size:0.85rem;">' + errMsg + '</div>');
         }
         body.scrollTop = body.scrollHeight;
     });
