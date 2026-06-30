@@ -33,20 +33,20 @@ const counterObserver = new IntersectionObserver((entries) => {
             if (!el.dataset.target) return;
             const target = +el.dataset.target;
             const duration = 1500;
-            const step = target / (duration / 16);
-            let current = 0;
+            const start = performance.now();
 
-            const update = () => {
-                current += step;
-                if (current < target) {
-                    el.textContent = Math.round(current) + '+';
+            const update = (now) => {
+                const elapsed = now - start;
+                const progress = Math.min(elapsed / duration, 1);
+                el.textContent = Math.round(target * progress) + '+';
+                if (progress < 1) {
                     requestAnimationFrame(update);
                 } else {
                     el.textContent = target + '+';
                 }
             };
 
-            update();
+            requestAnimationFrame(update);
             counterObserver.unobserve(el);
         }
     });
@@ -84,7 +84,7 @@ if (form && modal && modalClose) {
             phone: form.querySelector('[name="phone"]')?.value || '',
             message: form.querySelector('[name="message"]')?.value || ''
         };
-        fetch('https://Astap.pythonanywhere.com/api/lead', {
+        fetch('https://astap.pythonanywhere.com/api/lead', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
@@ -112,7 +112,7 @@ if (form && modal && modalClose) {
 
 // Visit tracker
 (function() {
-    const PA_URL = 'https://Astap.pythonanywhere.com/visit';
+    const PA_URL = 'https://astap.pythonanywhere.com/visit';
     const data = {
         page: window.location.pathname,
         ref: document.referrer || '',
@@ -186,7 +186,7 @@ if (form && modal && modalClose) {
         try {
             const ctrl = new AbortController();
             setTimeout(function() { ctrl.abort(); }, 15000);
-            const r = await fetch('https://Astap.pythonanywhere.com/api/chat', {
+            const r = await fetch('https://astap.pythonanywhere.com/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: msg, lang: window.currentLang || 'ru' }),
