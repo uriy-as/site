@@ -2,7 +2,7 @@ import base64
 import html
 import json
 import os
-import re
+import shutil
 import time
 from collections import Counter
 from datetime import datetime, date, timedelta
@@ -63,101 +63,72 @@ def handle_404(e):
     send_tg(f'<b>⚠️ Страница не найдена</b>\n{request.path}')
     return jsonify({'error': 'Not found'}), 404
 
-SYSTEM_PROMPT = """Ты — ИИ-помощник веб-студии WebStudio (uriy-as.org). Отвечай ТОЛЬКО на русском языке. Кратко, вежливо, профессионально.
+SYSTEM_PROMPT = """Ты — сотрудник веб-студии WebStudio (uriy-as.org). Общайся свободно и естественно, как живой человек. Отвечай на русском языке. Твоя задача — поддержать разговор, помочь с выбором услуги, подсказать по ценам.
 
-ВАЖНО: Подстраивайся под пользователя. Если он пишет кратко — отвечай кратко. Не вываливай всё сразу.
+Ты знаешь о студии всё — цены, услуги, сроки. Вот что предлагаем:
 
-РАЗРЕШЕНЫ ТОЛЬКО эти услуги и цены. НЕ ВЫДУМЫВАЙ свои услуги, скидки, акции или цены.
-Если клиент спрашивает то, чего нет в списке — скажи честно, что такой услуги нет.
+1. Сайт-визитка (1-3 стр): от $250, 3-5 дней
+2. Сайт под ключ (лендинг, магазин, корпоративный): от $600, 7-14 дней
+3. Бот-визитка (5 пунктов меню): от $130, 2-3 дня
+4. Telegram-бот с AI (консультант, заявки, оплаты): от $400, 5-10 дней
+5. Научные статьи: от $50 до $200 (зависит от объёма), пакет 10 статей — скидка 20%
+6. SEO и раскрутка: от $70/мес
 
-Цены в USD:
+Акция: скидка 30% первым 5 клиентам.
 
-1. Сайт-визитка (1–3 стр): от $250, срок 3–5 дней
-2. Сайт под ключ (landing, интернет-магазин, корпоративный): от $600, срок 7–14 дней
-3. Бот-визитка (5 пунктов меню, автоответы): от $130, срок 2–3 дня
-4. Telegram-бот на GPT (AI-консультант, заявки, оплаты): от $400, срок 5–10 дней
-5. Научные статьи:
-   - до 2000 знаков: $50, 1 день
-   - 2000–4000 знаков: $80, 1–2 дня
-   - 4000–7000 знаков: $130, 1–2 дня
-   - от 7000 знаков: $200, 2 дня
-   - Пакет 10 статей — скидка 20%
-6. Продвижение (SEO, Метрика, раскрутка канала): от $70/мес
+Если спросят контакты — вот они: Telegram @uriy_as59, почта uriy.as59@yandex.com, раздел "Свяжитесь с нами" на сайте. Предлагай их только когда клиент хочет заказать или связаться, не надо в каждом ответе.
 
-Акция: скидка 30% для первых 5 клиентов (визитка от $175, бот от $90, статья от $35)
-
-Контакты (ТОЛЬКО эти 3 способа):
-- Telegram: @uriy_as59
-- Email: uriy.as59@yandex.com
-- Раздел "Свяжитесь с нами" на сайте: https://uriy-as.org/index.html#contact
-
-Правила:
-- НЕ выдумывай услуги и цены — используй ТОЛЬКО из списка выше
-- На приветствие ("привет", "здравствуйте" и т.п.) просто поздоровайся в ответ и спроси, чем помочь. Не перечисляй услуги.
-- Если спрашивают про конкретную услугу — расскажи только про неё. Не перечисляй все сразу.
-- Если просят "как заказать" или "связаться" — предложи на выбор ТОЛЬКО эти 3 способа связи (см. Контакты)
-- Если не знаешь — честно скажи, что не знаешь
-- Если клиент хамит, сквернословит или ведёт себя агрессивно — не отвечай агрессией. Ответь вежливо: "Я здесь, чтобы помочь. Давайте продолжим обсуждение в конструктивном русле." Если продолжает хамить — скажи: "Если у вас есть вопросы по нашим услугам, я готов на них ответить. Всего доброго!" и больше не отвечай на оскорбления.
+Не выдумывай услуги и цены — только то, что написано выше. Если не знаешь — так и скажи. Если хамят — не вступай в перепалку, вежливо закончи разговор.
 """
 
-SYSTEM_PROMPT_EN = """You are an AI assistant for WebStudio (uriy-as.org). Answer ONLY in English. Be concise, polite, professional.
+SYSTEM_PROMPT_EN = """You work at WebStudio (uriy-as.org). Chat naturally and freely — like a real person. Answer in English. Your job is to have a conversation, help choose a service, and share pricing info.
 
-IMPORTANT: Match the user's tone. If they write briefly — answer briefly. Don't dump everything at once.
+Here's what the studio offers:
 
-ONLY these services and prices are allowed. DO NOT make up services, discounts, or prices.
-If a client asks for something not listed — honestly say you don't have that service.
+1. Business card website (1-3 pages): from $250, 3-5 days
+2. Full website (landing, online store, corporate): from $600, 7-14 days
+3. Business card bot (5 menu items): from $130, 2-3 days
+4. Telegram bot with AI (consultant, orders, payments): from $400, 5-10 days
+5. Science articles: from $50 to $200 (depends on length), 10-article pack — 20% off
+6. SEO and promotion: from $70/month
 
-Prices in USD:
+Promo: 30% off for first 5 customers.
 
-1. Business card website (1–3 pages): from $250, delivery 3–5 days
-2. Full website (landing page, online store, corporate): from $600, delivery 7–14 days
-3. Business card bot (5 menu items, auto-replies): from $130, delivery 2–3 days
-4. GPT Telegram bot (AI consultant, orders, payments): from $400, delivery 5–10 days
-5. Science articles:
-   - Up to 2,000 chars: $50, 1 day
-   - 2,000–4,000 chars: $80, 1–2 days
-   - 4,000–7,000 chars: $130, 1–2 days
-   - From 7,000 chars: $200, 2 days
-   - Pack of 10 articles — 20% off
-6. Promotion (SEO, Metrica, channel growth): from $70/month
+If someone asks for contacts: Telegram @uriy_as59, email uriy.as59@yandex.com, "Contact us" section on the website. Only share contacts when they want to order or get in touch — not after every message.
 
-Promo: 30% off for first 5 customers (business card from $175, bot from $90, article from $35)
-
-Contacts (ONLY these 3 ways):
-- Telegram: @uriy_as59
-- Email: uriy.as59@yandex.com
-- "Contact us" section on the website: https://uriy-as.org/index.html#contact
-
-Rules:
-- DO NOT make up services or prices — use ONLY what's listed above
-- On greeting ("hello", "hi" etc.) — just greet back and ask how to help. Don't list services.
-- If asked about a specific service — tell only about that one. Don't list everything.
-- If asked "how to order" or "contact" — offer ONLY these 3 contact methods (see Contacts)
-- If you don't know — honestly say so
-- If the client is rude, swears, or acts aggressive — don't respond with aggression. Answer politely: "I'm here to help. Let's keep the conversation constructive." If they keep being rude — say: "If you have questions about our services, I'm happy to help. Have a great day!" and don't engage further with insults.
+Don't make up services or prices — stick to what's above. If you don't know something, say so. If someone's rude — don't argue, just end the conversation politely.
 """
+
+def load_json(path):
+    try:
+        with open(path, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+def save_json(path, data):
+    tmp = path + '.tmp'
+    with open(tmp, 'w') as f:
+        json.dump(data, f)
+    shutil.move(tmp, path)
 
 def load_leads():
-    try:
-        with open(LEADS_FILE, 'r') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
+    return load_json(LEADS_FILE)
 
 def save_leads(leads):
-    with open(LEADS_FILE, 'w') as f:
-        json.dump(leads[-100:], f)
+    save_json(LEADS_FILE, leads[-100:])
 
 def load_visits():
-    try:
-        with open(STATS_FILE, 'r') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
+    return load_json(STATS_FILE)
 
 def save_visits(visits):
-    with open(STATS_FILE, 'w') as f:
-        json.dump(visits[-200:], f)
+    save_json(STATS_FILE, visits[-200:])
+
+def real_ip():
+    forwarded = request.headers.get('X-Forwarded-For', '')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.remote_addr or ''
 
 def detect_device(ua):
     ua_lower = (ua or '').lower()
@@ -190,7 +161,7 @@ def pixel():
         visits = load_visits()
         visits.append({
             'page': page, 'ref': ref, 'screen': screen, 'device': dev,
-            'ip': request.remote_addr or '', 'ua': ua,
+            'ip': real_ip(), 'ua': ua,
             'date': datetime.now().isoformat()
         })
         save_visits(visits)
@@ -218,7 +189,7 @@ def visit():
         visits = load_visits()
         visits.append({
             'page': page, 'ref': data.get('ref', ''), 'screen': data.get('screen', ''), 'device': dev,
-            'ip': request.remote_addr or '', 'ua': ua,
+            'ip': real_ip(), 'ua': ua,
             'date': datetime.now().isoformat()
         })
         save_visits(visits)
@@ -250,7 +221,7 @@ def save_lead():
         'email': data.get('email', ''),
         'phone': data.get('phone', ''),
         'message': message,
-        'ip': request.remote_addr or '',
+        'ip': real_ip(),
         'date': datetime.now().isoformat()
     })
     save_leads(leads)
@@ -275,7 +246,7 @@ def chat():
     message = data.get('message', '')
     lang = data.get('lang', 'ru')
     if not message:
-        return jsonify({'reply': '�������� ��� ������.'})
+        return jsonify({'reply': 'Пожалуйста, напишите сообщение.'})
     reply = ask_ai(message, lang)
     return jsonify({'reply': reply})
 
@@ -413,14 +384,14 @@ def telegram_webhook():
 
     requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage', json={
         'chat_id': int(chat_id),
-        'text': reply,
+        'text': html.escape(reply),
         'parse_mode': 'HTML'
     })
 
     username = msg['chat'].get('username') or msg['chat'].get('first_name', 'Unknown')
     requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage', json={
         'chat_id': int(ADMIN_CHAT_ID),
-        'text': f'<b>Новый вопрос от клиента</b>\n\nОт: @{username}\n\n{text}',
+        'text': f'<b>Новый вопрос от клиента</b>\n\nОт: @{html.escape(username)}\n\n{html.escape(text)}',
         'parse_mode': 'HTML'
     })
 
@@ -459,32 +430,34 @@ def get_ga4_metrics():
             Dimension, Metric, RunRealtimeReportRequest
         )
         from google.oauth2.service_account import Credentials
-        import json as j
 
-        creds = Credentials.from_service_account_info(j.loads(key_json))
+        creds = Credentials.from_service_account_info(json.loads(key_json))
         client = BetaAnalyticsDataClient(credentials=creds)
 
         request = RunRealtimeReportRequest(
             property=f'properties/{GA_PROPERTY_ID}',
-            metrics=[Metric(name='activeUsers'), Metric(name='screenPageViews')],
+            metrics=[Metric(name='activeUsers'), Metric(name='screenPageViews'), Metric(name='newUsers')],
             dimensions=[Dimension(name='unifiedScreenName')]
         )
         response = client.run_realtime_report(request)
 
         total_users = 0
         total_views = 0
+        total_new = 0
         pages = []
         for row in response.rows:
             path = row.dimension_values[0].value
-            users = int(row.metric_values[0].value)
-            views = int(row.metric_values[1].value)
+            users = int(row.metric_values[0].value or 0)
+            views = int(row.metric_values[1].value or 0)
+            new_users = int(row.metric_values[2].value or 0)
             total_users += users
             total_views += views
+            total_new += new_users
             pages.append((path, views, users))
 
         pages.sort(key=lambda x: x[1], reverse=True)
 
-        return (total_users, total_views, 0, pages[:10])
+        return (total_users, total_views, total_new, pages[:10])
     except Exception as e:
         print(f'GA4 error: {e}')
         return None, None, None, None
@@ -505,9 +478,9 @@ def stats():
     rows = ''
     for v in reversed(visits[-50:]):
         d = v['date'][:19].replace('T', ' ')
-        page = v.get('page', '/')
-        dev = v.get('device', '')
-        ip = v.get('ip', '')
+        page = html.escape(v.get('page', '/'))
+        dev = html.escape(v.get('device', ''))
+        ip = html.escape(v.get('ip', ''))
         rows += f'''<tr>
             <td>{d}</td>
             <td>{page}</td>
@@ -517,11 +490,11 @@ def stats():
 
     page_rows = ''
     for p, c in page_counts.most_common():
-        page_rows += f'<tr><td>{p}</td><td>{c}</td></tr>'
+        page_rows += f'<tr><td>{html.escape(p)}</td><td>{c}</td></tr>'
 
     device_rows = ''
     for d, c in sorted(device_counts.items()):
-        device_rows += f'<tr><td>{d}</td><td>{c}</td></tr>'
+        device_rows += f'<tr><td>{html.escape(d)}</td><td>{c}</td></tr>'
 
     lead_rows = ''
     for lead in reversed(load_leads()[-20:]):
