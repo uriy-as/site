@@ -1276,6 +1276,21 @@ body {
     height: 18px;
 }
 
+.chat-mic {
+    background: transparent !important;
+    color: #888 !important;
+    width: 36px !important;
+    height: 36px !important;
+}
+.chat-mic:hover {
+    color: #6c63ff !important;
+    background: rgba(108,99,255,0.08) !important;
+}
+.chat-mic--active {
+    color: #ff4444 !important;
+    animation: pulse 1s ease infinite;
+}
+
 @media (max-width: 480px) {
     .chat-widget {
         bottom: 16px;

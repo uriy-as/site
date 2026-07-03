@@ -171,6 +171,47 @@ if (form && modal && modalClose) {
         popup.classList.remove('chat-popup--open');
     });
 
+    // Voice input
+    var micBtn = document.getElementById('chatMic');
+    var recognition = null;
+    var isRecording = false;
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition && micBtn) {
+        recognition = new SpeechRecognition();
+        recognition.lang = 'ru-RU';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+        recognition.onresult = function(ev) {
+            var transcript = ev.results[0][0].transcript;
+            input.value = transcript;
+            isRecording = false;
+            micBtn.classList.remove('chat-mic--active');
+            form.dispatchEvent(new Event('submit'));
+        };
+        recognition.onerror = function() {
+            isRecording = false;
+            micBtn.classList.remove('chat-mic--active');
+        };
+        recognition.onend = function() {
+            isRecording = false;
+            micBtn.classList.remove('chat-mic--active');
+        };
+        micBtn.addEventListener('click', function() {
+            if (isRecording) {
+                recognition.stop();
+                return;
+            }
+            recognition.lang = (window.currentLang || 'ru') === 'en' ? 'en-US' : 'ru-RU';
+            try {
+                recognition.start();
+                isRecording = true;
+                micBtn.classList.add('chat-mic--active');
+            } catch(e) {}
+        });
+    } else if (micBtn) {
+        micBtn.style.display = 'none';
+    }
+
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const msg = input.value.trim();
@@ -196,6 +237,12 @@ if (form && modal && modalClose) {
             const data = await r.json();
             body.removeChild(body.lastChild);
             body.insertAdjacentHTML('beforeend', '<div class="chat-msg chat-msg--bot">' + escapeHtml(data.reply) + '</div>');
+            if (window.speechSynthesis) {
+                var utter = new SpeechSynthesisUtterance(data.reply);
+                utter.lang = (window.currentLang || 'ru') === 'en' ? 'en-US' : 'ru-RU';
+                utter.rate = 1.0;
+                speechSynthesis.speak(utter);
+            }
         } catch(e) {
             body.removeChild(body.lastChild);
             var errMsg = 'Извините, сервер временно недоступен. Напишите нам в Telegram: <a href="https://t.me/uriy_as59" target="_blank" style="color:#6c63ff;">@uriy_as59</a>';
