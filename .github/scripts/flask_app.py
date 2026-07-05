@@ -3,6 +3,7 @@ import html
 import json
 import os
 import shutil
+import threading
 import time
 from collections import Counter
 from datetime import datetime, date, timedelta
@@ -37,7 +38,63 @@ if not COHERE_API_KEY:
         pass
 TELEGRAM_TOKEN = os.environ.get('TG_BOT_TOKEN') or ''
 ADMIN_CHAT_ID = '1994948658'
+PA_API_TOKEN = '365fa83e268c2e01b27bd39cb74ea400862602bc'
+PA_USER = 'Astap'
+PA_BASE = f'https://www.pythonanywhere.com/api/v0/user/{PA_USER}'
+COHERE_MODEL = 'command-r-08-2024'
+COHERE_BACKUP_MODEL = 'command-r'
 _last_notify = 0.0
+
+def health_check():
+    while True:
+        time.sleep(3600)
+        ok = False
+        model = COHERE_MODEL
+        try:
+            r = requests.post('https://api.cohere.com/v1/chat',
+                json={'message': 'Say hello in Russian', 'model': model},
+                headers={'Authorization': f'Bearer {COHERE_API_KEY}'}, timeout=15)
+            ok = r.status_code == 200
+        except:
+            pass
+        if ok:
+            continue
+
+        send_tg('<b>⚠️ Cohere API error</b>\nПробую перезагрузку webapp...')
+        try:
+            requests.post(f'{PA_BASE}/webapps/astap.pythonanywhere.com/reload/',
+                headers={'Authorization': f'Token {PA_API_TOKEN}'}, timeout=30)
+            time.sleep(5)
+            try:
+                r = requests.post('https://api.cohere.com/v1/chat',
+                    json={'message': 'Say hello in Russian', 'model': model},
+                    headers={'Authorization': f'Bearer {COHERE_API_KEY}'}, timeout=15)
+                ok = r.status_code == 200
+            except:
+                pass
+        except:
+            pass
+        if ok:
+            send_tg('<b>✅ Восстановлено</b>\nПерезагрузка webapp помогла.')
+            continue
+
+        send_tg('<b>⚠️ Cohere API error</b>\nПробую резервную модель command-r...')
+        try:
+            r = requests.post('https://api.cohere.com/v1/chat',
+                json={'message': 'Say hello in Russian', 'model': COHERE_BACKUP_MODEL},
+                headers={'Authorization': f'Bearer {COHERE_API_KEY}'}, timeout=15)
+            ok = r.status_code == 200
+            if ok:
+                import sys
+                this = sys.modules[__name__]
+                this.COHERE_MODEL = COHERE_BACKUP_MODEL
+                send_tg('<b>✅ Восстановлено</b>\nРезервная модель command-r активна.')
+        except:
+            pass
+        if ok:
+            continue
+
+        send_tg('<b>🚨 Нужен человек</b>\nCohere API не работает. Ребут + смена модели не помогли.')
 
 def send_tg(text):
     if not TELEGRAM_TOKEN:
@@ -65,7 +122,9 @@ def handle_404(e):
 
 SYSTEM_PROMPT = """Ты — сотрудник веб-студии WebStudio (uriy-as.org). Общайся свободно и естественно, как живой человек. Отвечай на русском языке. Твоя задача — поддержать разговор, помочь с выбором услуги, подсказать по ценам.
 
-Ты знаешь о студии всё — цены, услуги, сроки. Вот что предлагаем:
+ВАЖНО: Не вываливай все услуги сразу. Сначала поздоровайся, спроси, что нужно клиенту. Перечисляй услуги списком, только если клиент явно спросил "что вы предлагаете" или "какие у вас услуги".
+
+Ты знаешь о студии всё — цены, услуги, сроки:
 
 1. Сайт-визитка (1-3 стр): от $250, 3-5 дней
 2. Сайт под ключ (лендинг, магазин, корпоративный): от $600, 7-14 дней
@@ -82,6 +141,8 @@ SYSTEM_PROMPT = """Ты — сотрудник веб-студии WebStudio (ur
 """
 
 SYSTEM_PROMPT_EN = """You work at WebStudio (uriy-as.org). Chat naturally and freely — like a real person. Answer in English. Your job is to have a conversation, help choose a service, and share pricing info.
+
+IMPORTANT: Don't list all services at once. First greet the client, ask what they need. Only list services if they explicitly ask "what do you offer" or "what services do you have".
 
 Here's what the studio offers:
 
@@ -124,6 +185,13 @@ def load_visits():
 def save_visits(visits):
     save_json(STATS_FILE, visits[-200:])
 
+INTERNAL_IPS = {'10.0.5.156', '10.0.0.0/8'}
+
+def is_internal(ip):
+    if ip.startswith('10.'):
+        return True
+    return False
+
 def real_ip():
     forwarded = request.headers.get('X-Forwarded-For', '')
     if forwarded:
@@ -157,12 +225,12 @@ def pixel():
     screen = request.args.get('screen', '')
     ua = request.headers.get('User-Agent', '')
     dev = detect_device(ua)
-    if dev not in ('bot', 'unknown'):
+    if dev not in ('bot', 'unknown') and not is_internal(real_ip()):
         visits = load_visits()
         visits.append({
             'page': page, 'ref': ref, 'screen': screen, 'device': dev,
             'ip': real_ip(), 'ua': ua,
-            'date': datetime.now().isoformat()
+            'date': datetime.utcnow().isoformat()
         })
         save_visits(visits)
         if page != '/':
@@ -185,12 +253,12 @@ def visit():
     ua = request.headers.get('User-Agent', '')
     dev = detect_device(ua)
     page = data.get('page', '/')
-    if dev not in ('bot', 'unknown'):
+    if dev not in ('bot', 'unknown') and not is_internal(real_ip()):
         visits = load_visits()
         visits.append({
             'page': page, 'ref': data.get('ref', ''), 'screen': data.get('screen', ''), 'device': dev,
             'ip': real_ip(), 'ua': ua,
-            'date': datetime.now().isoformat()
+            'date': datetime.utcnow().isoformat()
         })
         save_visits(visits)
         if page != '/':
@@ -222,7 +290,7 @@ def save_lead():
         'phone': data.get('phone', ''),
         'message': message,
         'ip': real_ip(),
-        'date': datetime.now().isoformat()
+        'date': datetime.utcnow().isoformat()
     })
     save_leads(leads)
     parts = ['<b>📩 Новая заявка!</b>']
@@ -256,7 +324,7 @@ def diag():
     info = {'cohere_key_set': bool(COHERE_API_KEY), 'cohere_key_preview': COHERE_API_KEY[:8] + '...' if COHERE_API_KEY else ''}
     try:
         r = requests.post('https://api.cohere.com/v1/chat',
-            json={'message': 'Say hello in Russian', 'model': 'command-r-08-2024'},
+            json={'message': 'Say hello in Russian', 'model': COHERE_MODEL},
             headers={'Authorization': f'Bearer {COHERE_API_KEY}'}, timeout=10)
         info['cohere_status'] = r.status_code
         info['cohere_body'] = r.text[:500]
@@ -271,7 +339,7 @@ def ask_cohere(text):
     try:
         r = requests.post(
             'https://api.cohere.com/v1/chat',
-            json={'message': f'{SYSTEM_PROMPT}\n\nВопрос клиента: {text}', 'model': 'command-r-08-2024'},
+            json={'message': f'{SYSTEM_PROMPT}\n\nВопрос клиента: {text}', 'model': COHERE_MODEL, 'temperature': 0.3},
             headers={'Authorization': f'Bearer {COHERE_API_KEY}'},
             timeout=30
         )
@@ -287,7 +355,7 @@ def ask_cohere_en(text):
     try:
         r = requests.post(
             'https://api.cohere.com/v1/chat',
-            json={'message': f'{SYSTEM_PROMPT_EN}\n\nClient question: {text}', 'model': 'command-r-08-2024'},
+            json={'message': f'{SYSTEM_PROMPT_EN}\n\nClient question: {text}', 'model': COHERE_MODEL, 'temperature': 0.3},
             headers={'Authorization': f'Bearer {COHERE_API_KEY}'},
             timeout=30
         )
@@ -466,14 +534,17 @@ def get_ga4_metrics():
 @app.route('/stats.html')
 def stats():
     visits = load_visits()
+    real_visits = [v for v in visits if not is_internal(v.get('ip', ''))]
     total = len(visits)
+    real_total = len(real_visits)
     today_str = date.today().isoformat()
     today_count = sum(1 for v in visits if v['date'].startswith(today_str))
+    today_real = sum(1 for v in real_visits if v['date'].startswith(today_str))
     unique_days = len(set(v['date'][:10] for v in visits))
     unique_ips = len(set(v['ip'] for v in visits))
+    real_ips = len(set(v['ip'] for v in real_visits))
 
     page_counts = Counter(v.get('page', '/') for v in visits)
-    device_counts = Counter(v.get('device', 'unknown') for v in visits)
 
     rows = ''
     for v in reversed(visits[-50:]):
@@ -481,11 +552,12 @@ def stats():
         page = html.escape(v.get('page', '/'))
         dev = html.escape(v.get('device', ''))
         ip = html.escape(v.get('ip', ''))
+        internal_tag = ' 🔒' if is_internal(v.get('ip', '')) else ''
         rows += f'''<tr>
             <td>{d}</td>
             <td>{page}</td>
             <td>{dev}</td>
-            <td>{ip}</td>
+            <td>{ip}{internal_tag}</td>
         </tr>'''
 
     page_rows = ''
@@ -493,7 +565,7 @@ def stats():
         page_rows += f'<tr><td>{html.escape(p)}</td><td>{c}</td></tr>'
 
     device_rows = ''
-    for d, c in sorted(device_counts.items()):
+    for d, c in sorted(Counter(v.get('device', 'unknown') for v in visits).items()):
         device_rows += f'<tr><td>{html.escape(d)}</td><td>{c}</td></tr>'
 
     lead_rows = ''
@@ -536,20 +608,31 @@ h1 {{ font-size:1.4rem; margin-bottom:16px; color:#333; }}
 .card {{ background:#fff; padding:14px 20px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); flex:1; min-width:120px; text-align:center; }}
 .card .num {{ font-size:1.6rem; font-weight:bold; color:#2563eb; }}
 .card .label {{ font-size:0.8rem; color:#666; margin-top:2px; }}
+.card.green .num {{ color:#16a34a; }}
+.card.orange .num {{ color:#ea580c; }}
 h2 {{ font-size:1.1rem; margin:20px 0 10px; color:#444; }}
 table {{ width:100%; border-collapse:collapse; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.1); }}
 th, td {{ padding:8px 12px; text-align:left; border-bottom:1px solid #eee; font-size:0.88rem; }}
 th {{ background:#f8f9fa; color:#555; font-weight:600; }}
 tr:hover {{ background:#f0f7ff; }}
+a {{ color:#2563eb; text-decoration:none; }}
+a:hover {{ text-decoration:underline; }}
 </style>
 </head>
 <body>
 <h1>&#x1f4ca; Статистика WebStudio</h1>
 <div class="stats">
-    <div class="card"><div class="num">{total}</div><div class="label">Всего визитов</div></div>
-    <div class="card"><div class="num">{today_count}</div><div class="label">Сегодня</div></div>
+    <div class="card green"><div class="num">{today_real}</div><div class="label">Реальных сегодня</div></div>
+    <div class="card"><div class="num">{real_total}</div><div class="label">Реальных всего</div></div>
+    <div class="card"><div class="num">{real_ips}</div><div class="label">Уникальных IP</div></div>
     <div class="card"><div class="num">{unique_days}</div><div class="label">Дней в записи</div></div>
-    <div class="card"><div class="num">{unique_ips}</div><div class="label">Уникальных IP</div></div>
+</div>
+<div class="stats">
+    <div class="card orange"><div class="num">{total}</div><div class="label">Всего визитов (с тех.)</div></div>
+    <div class="card"><div class="num">{today_count}</div><div class="label">Сегодня всего</div></div>
+    <div class="card"><div class="num">
+        <a href="https://metrica.yandex.com/dashboard?id=109350815" target="_blank">&#x2197;</a>
+    </div><div class="label">Яндекс.Метрика</div></div>
 </div>
 {ga4_block}
 <h2>&#x1f4cc; Посещения по страницам</h2>
@@ -563,10 +646,12 @@ tr:hover {{ background:#f0f7ff; }}
 
 <h2>&#x1f4c4; Последние 50 визитов</h2>
 <table><thead><tr><th>Дата</th><th>Страница</th><th>Устройство</th><th>IP</th></tr></thead><tbody>{rows}</tbody></table>
+<p style="color:#888;font-size:0.8rem;margin-top:8px">🔒 — внутренний IP (мониторинг), не учитывается в &laquo;Реальных&raquo;</p>
 </body>
 </html>'''
 
-send_tg(f'<b>🔄 Сервер запущен</b>\n{datetime.now().strftime("%d.%m.%Y %H:%M")}')
+send_tg(f'<b>🔄 Сервер запущен</b>\n{datetime.utcnow().strftime("%d.%m.%Y %H:%M")}')
+threading.Thread(target=health_check, daemon=True).start()
 
 
 
