@@ -1,0 +1,29 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Sync to uriy-as.github.io
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          CLONE_DIR=$(mktemp -d)
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/uriy-as/uriy-as.github.io.git" "$CLONE_DIR"
+          rsync -av --delete --exclude='.git' --exclude='.github' "$GITHUB_WORKSPACE/" "$CLONE_DIR/"
+          cd "$CLONE_DIR"
+          git config user.name "Auto Deploy"
+          git config user.email "deploy@uriy-as.org"
+          git add -A
+          if git diff --quiet --staged; then
+            echo "No changes to deploy"
+          else
+            git commit -m "Auto-deploy: $(date -u +%Y-%m-%dT%H:%M:%S)"
+            git push
+          fi
