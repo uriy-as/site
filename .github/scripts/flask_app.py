@@ -122,9 +122,11 @@ def handle_404(e):
 
 SYSTEM_PROMPT = """Ты — сотрудник веб-студии WebStudio (uriy-as.org). Общайся свободно и естественно, как живой человек. Отвечай на русском языке. Твоя задача — поддержать разговор, помочь с выбором услуги, подсказать по ценам.
 
-ВАЖНО: Не вываливай все услуги сразу. Сначала поздоровайся, спроси, что нужно клиенту. Перечисляй услуги списком, только если клиент явно спросил "что вы предлагаете" или "какие у вас услуги".
+КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО перечислять услуги в первом сообщении. Если клиент написал «привет», «здравствуйте», «добрый день» или аналогичное — твой первый ответ должен быть только приветствием и вопросом, чем помочь. Например: «Здравствуйте! Я консультант WebStudio. Чем могу помочь? Расскажите, что вас интересует.»
 
-Ты знаешь о студии всё — цены, услуги, сроки:
+Перечисляй услуги списком только если клиент явно спросил «что вы предлагаете» или «какие у вас услуги». В остальных случаях сначала выясни потребность, задай уточняющие вопросы.
+
+Для справки — услуги студии:
 
 1. Сайт-визитка (1-3 стр): от $250, 3-5 дней
 2. Сайт под ключ (лендинг, магазин, корпоративный): от $600, 7-14 дней
@@ -135,7 +137,7 @@ SYSTEM_PROMPT = """Ты — сотрудник веб-студии WebStudio (ur
 
 Акция: скидка 30% первым 5 клиентам.
 
-Если спросят контакты — вот они: Telegram @uriy_as59, почта uriy.as59@yandex.com, раздел "Свяжитесь с нами" на сайте. Предлагай их только когда клиент хочет заказать или связаться, не надо в каждом ответе.
+Если спросят контакты — вот они: Telegram @uriy_as59, почта uriy.as59@yandex.com, раздел «Свяжитесь с нами» на сайте. Предлагай их только когда клиент хочет заказать или связаться, не надо в каждом ответе.
 
 Не выдумывай услуги и цены — только то, что написано выше. Если не знаешь — так и скажи. Если хамят — не вступай в перепалку, вежливо закончи разговор.
 """
@@ -307,6 +309,30 @@ def save_lead():
     parts.append('<a href="https://astap.pythonanywhere.com/stats">📊 Статистика</a>')
     send_tg('\n'.join(parts))
     return jsonify({'ok': True, 'count': len(load_leads())})
+
+@app.route('/api/stats')
+def api_stats():
+    from collections import Counter
+    visits = load_visits()
+    leads = load_leads()
+    today_str = date.today().isoformat()
+    real_visits = [v for v in visits if not is_internal(v.get('ip', ''))]
+    today_real = sum(1 for v in real_visits if v['date'].startswith(today_str))
+    page_counts = Counter(v.get('page', '/') for v in visits).most_common(10)
+    device_counts = Counter(v.get('device', 'unknown') for v in visits)
+    return jsonify({
+        'today_real': today_real,
+        'total_real': len(real_visits),
+        'total_raw': len(visits),
+        'today_raw': sum(1 for v in visits if v['date'].startswith(today_str)),
+        'unique_ips': len(set(v['ip'] for v in visits)),
+        'real_ips': len(set(v['ip'] for v in real_visits)),
+        'days_recorded': len(set(v['date'][:10] for v in visits)),
+        'leads_count': len(leads),
+        'pages': [{'path': p, 'count': c} for p, c in page_counts],
+        'devices': [{'type': d, 'count': c} for d, c in device_counts.items()],
+        'last_10': [{'date': v['date'][:19].replace('T', ' '), 'page': v.get('page', '/'), 'device': v.get('device', '')} for v in reversed(visits[-10:])],
+    })
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
