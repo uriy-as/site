@@ -151,7 +151,39 @@ html += '''
 </body>
 </html>'''
 
-output_path = os.path.join(os.environ.get('GITHUB_WORKSPACE', '.'), 'stats.html')
-with open(output_path, 'w', encoding='utf-8') as f:
-    f.write(html)
-print(f'stats.html written to {output_path}')
+# Push stats.html to GitHub Pages via Contents API
+pages_repo = 'uriy-as/uriy-as.github.io'
+pages_headers = {**headers, 'Accept': 'application/vnd.github.v3+json'}
+html_bytes = html.encode('utf-8')
+import base64
+b64_content = base64.b64encode(html_bytes).decode()
+
+# Get current file SHA if exists
+req = urllib.request.Request(f'https://api.github.com/repos/{pages_repo}/contents/stats.html', headers=pages_headers)
+try:
+    with urllib.request.urlopen(req) as r:
+        existing = json.loads(r.read())
+        sha = existing.get('sha', '')
+except urllib.error.HTTPError as e:
+    if e.code == 404:
+        sha = ''
+    else:
+        print(f'Error checking stats.html: {e.code}')
+        sha = ''
+
+data = {'message': f'Update stats.html {datetime.utcnow().strftime("%Y-%m-%d %H:%M")} UTC', 'content': b64_content}
+if sha:
+    data['sha'] = sha
+
+req2 = urllib.request.Request(
+    f'https://api.github.com/repos/{pages_repo}/contents/stats.html',
+    data=json.dumps(data).encode(),
+    headers=pages_headers,
+    method='PUT'
+)
+try:
+    with urllib.request.urlopen(req2) as r:
+        result = json.loads(r.read())
+        print(f'stats.html pushed to pages: {result["content"]["sha"][:10]}')
+except urllib.error.HTTPError as e:
+    print(f'Error pushing stats.html: {e.code} {e.read().decode()[:200]}')
