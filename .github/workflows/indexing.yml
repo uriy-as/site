@@ -1,0 +1,19 @@
+name: Google Indexing
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - run: pip install PyJWT requests
+      - run: |
+          echo '${{ secrets.GA_SERVICE_KEY }}' > /tmp/ga-key.json
+          python .github/scripts/indexing_api.py /tmp/ga-key.json
