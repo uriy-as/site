@@ -17,10 +17,11 @@ app = Flask(__name__)
 def cors(resp):
     resp.headers['Access-Control-Allow-Origin'] = 'https://uriy-as.org'
     resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-    resp.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+    resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     return resp
 
 @app.route('/api/chat', methods=['OPTIONS'])
+@app.route('/api/stats', methods=['OPTIONS'])
 @app.route('/visit', methods=['OPTIONS'])
 @app.route('/pixel', methods=['OPTIONS'])
 def cors_preflight():
