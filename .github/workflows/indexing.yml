@@ -18,5 +18,5 @@ jobs:
         env:
           GA_KEY: ${{ secrets.GA_SERVICE_KEY }}
         run: |
-          python -c "import os; open('/tmp/ga-key.json','w').write(os.environ['GA_KEY'])"
+          python -c "import os, json, hashlib, sys; s=os.environ['GA_KEY']; d=json.loads(s); print('client_email:', d['client_email']); print('key_len:', len(d['private_key'])); print('key_start:', d['private_key'][:32]); print('key_end:', d['private_key'][-32:]); print('sha256:', hashlib.sha256(s.encode()).hexdigest()); open('/tmp/ga-key.json','w').write(s)"
           python .github/scripts/indexing_api.py /tmp/ga-key.json
