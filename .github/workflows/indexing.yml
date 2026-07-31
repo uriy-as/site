@@ -14,6 +14,9 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install PyJWT requests
-      - run: |
-          echo '${{ secrets.GA_SERVICE_KEY }}' > /tmp/ga-key.json
+      - name: Run indexing
+        env:
+          GA_KEY: ${{ secrets.GA_SERVICE_KEY }}
+        run: |
+          python -c "import os; open('/tmp/ga-key.json','w').write(os.environ['GA_KEY'])"
           python .github/scripts/indexing_api.py /tmp/ga-key.json
