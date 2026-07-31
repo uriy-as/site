@@ -9,7 +9,7 @@ SITEMAP_URL = 'https://uriy-as.org/sitemap.xml'
 API_URL = 'https://indexing.googleapis.com/v3/urlNotifications:publish'
 TOKEN_URL = 'https://oauth2.googleapis.com/token'
 
-SCOPES = ['https://www.googleapis.com/auth/indexing']
+SCOPES = 'https://www.googleapis.com/auth/indexing'
 
 def get_access_token(sa_info):
     now = int(time.time())
@@ -26,7 +26,8 @@ def get_access_token(sa_info):
         'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
         'assertion': signed_jwt,
     }, timeout=15)
-    r.raise_for_status()
+    if r.status_code != 200:
+        raise RuntimeError(f'oauth2 token {r.status_code}: {r.text[:500]}')
     return r.json()['access_token']
 
 def get_sitemap_urls():
@@ -46,6 +47,8 @@ def submit_url(token, url, action='URL_UPDATED'):
 
 def main():
     import sys
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     if len(sys.argv) < 2:
         print('Usage: python indexing_api.py <path-to-service-account.json>')
         sys.exit(1)
