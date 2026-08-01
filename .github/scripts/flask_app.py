@@ -1,17 +1,53 @@
-import base64
+﻿import base64
 import html
 import json
 import os
+import secrets
 import shutil
 import threading
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime, date, timedelta
 
 import requests
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, abort
 
 app = Flask(__name__)
+
+ALLOWED_ORIGINS = {'https://uriy-as.org', 'https://www.uriy-as.org'}
+
+_rate = defaultdict(list)
+_rate_lock = threading.Lock()
+
+def check_origin():
+    origin = request.headers.get('Origin', '')
+    if not origin:
+        return True
+    return origin in ALLOWED_ORIGINS
+
+def rate_limit(key, limit, window=60):
+    now = time.time()
+    with _rate_lock:
+        ts = [t for t in _rate[key] if now - t < window]
+        if len(ts) >= limit:
+            _rate[key] = ts
+            return False
+        ts.append(now)
+        _rate[key] = ts
+    return True
+
+def client_ip():
+    forwarded = request.headers.get('X-Forwarded-For', '')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.remote_addr or ''
+
+@app.before_request
+def protect():
+    if request.method == 'OPTIONS':
+        return None
+    if not check_origin():
+        return jsonify({'error': 'Forbidden'}), 403
 
 @app.after_request
 def cors(resp):
@@ -45,6 +81,28 @@ PA_BASE = f'https://www.pythonanywhere.com/api/v0/user/{PA_USER}'
 COHERE_MODEL = 'command-r-08-2024'
 COHERE_BACKUP_MODEL = 'command-r'
 _last_notify = 0.0
+
+DIAG_KEY_FILE = '/home/Astap/mysite/.diag_key'
+def _load_diag_key():
+    k = os.environ.get('DIAG_KEY', '')
+    if k:
+        return k
+    try:
+        with open(DIAG_KEY_FILE) as f:
+            k = f.read().strip()
+        if k:
+            return k
+    except FileNotFoundError:
+        pass
+    k = secrets.token_urlsafe(16)
+    try:
+        with open(DIAG_KEY_FILE, 'w') as f:
+            f.write(k)
+    except Exception:
+        pass
+    return k
+
+DIAG_KEY = _load_diag_key()
 
 def health_check():
     while True:
@@ -246,7 +304,7 @@ def pixel():
                     msg += f' ({screen})'
                 if ref:
                     msg += f'\nReferrer: {ref}'
-                msg += '\n<a href="https://astap.pythonanywhere.com/stats">📊 Статистика</a>'
+                msg += f'\n<a href="https://astap.pythonanywhere.com/stats?key={DIAG_KEY}">📊 Статистика</a>'
                 send_tg(msg)
     return Response(PIXEL_GIF, mimetype='image/gif')
 
@@ -276,16 +334,22 @@ def visit():
                     msg += f' ({screen})'
                 if ref:
                     msg += f'\nReferrer: {ref}'
-                msg += '\n<a href="https://astap.pythonanywhere.com/stats">📊 Статистика</a>'
+                msg += f'\n<a href="https://astap.pythonanywhere.com/stats?key={DIAG_KEY}">📊 Статистика</a>'
                 send_tg(msg)
     return jsonify({'ok': True})
 
 @app.route('/api/lead', methods=['POST'])
 def save_lead():
+    if not rate_limit(f'lead:{client_ip()}', 10, 300):
+        return jsonify({'ok': False, 'error': 'Too many requests'}), 429
     data = request.json or {}
+    if data.get('website') or data.get('company') or data.get('url'):
+        return jsonify({'ok': True})
     message = data.get('message', '').strip() or data.get('msg', '').strip()
     if not message:
         return jsonify({'ok': False})
+    if len(message) > 5000 or len(data.get('name', '')) > 200 or len(data.get('email', '')) > 200 or len(data.get('phone', '')) > 100:
+        return jsonify({'ok': False}), 400
     leads = load_leads()
     leads.append({
         'name': data.get('name', ''),
@@ -307,12 +371,14 @@ def save_lead():
     if email:
         parts.append(f'Email: {email}')
     parts.append(f'Сообщение: {message}')
-    parts.append('<a href="https://astap.pythonanywhere.com/stats">📊 Статистика</a>')
+    parts.append(f'<a href="https://astap.pythonanywhere.com/stats?key={DIAG_KEY}">📊 Статистика</a>')
     send_tg('\n'.join(parts))
     return jsonify({'ok': True, 'count': len(load_leads())})
 
 @app.route('/api/stats')
 def api_stats():
+    if request.args.get('key') != DIAG_KEY:
+        abort(403)
     from collections import Counter
     visits = load_visits()
     leads = load_leads()
@@ -337,16 +403,22 @@ def api_stats():
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
+    if not rate_limit(f'chat:{client_ip()}', 20, 60):
+        return jsonify({'error': 'Too many requests'}), 429
     data = request.json or {}
     message = data.get('message', '')
     lang = data.get('lang', 'ru')
     if not message:
         return jsonify({'reply': 'Пожалуйста, напишите сообщение.'})
+    if len(message) > 4000:
+        return jsonify({'reply': 'Сообщение слишком длинное.'})
     reply = ask_ai(message, lang)
     return jsonify({'reply': reply})
 
 @app.route('/api/diag')
 def diag():
+    if request.args.get('key') != DIAG_KEY:
+        abort(403)
     import traceback
     info = {'cohere_key_set': bool(COHERE_API_KEY), 'cohere_key_preview': COHERE_API_KEY[:8] + '...' if COHERE_API_KEY else ''}
     try:
@@ -494,6 +566,8 @@ def telegram_webhook():
 
 @app.route('/set_webhook')
 def set_webhook():
+    if request.args.get('key') != DIAG_KEY:
+        abort(403)
     url = request.args.get('url')
     if not url:
         return jsonify({'error': 'Provide ?url= parameter'}), 400
@@ -502,6 +576,8 @@ def set_webhook():
 
 @app.route('/delete_webhook')
 def delete_webhook():
+    if request.args.get('key') != DIAG_KEY:
+        abort(403)
     r = requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook')
     return jsonify(r.json())
 
@@ -560,6 +636,8 @@ def get_ga4_metrics():
 @app.route('/stats')
 @app.route('/stats.html')
 def stats():
+    if request.args.get('key') != DIAG_KEY:
+        abort(403)
     visits = load_visits()
     real_visits = [v for v in visits if not is_internal(v.get('ip', ''))]
     total = len(visits)
