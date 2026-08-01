@@ -377,7 +377,10 @@ def save_lead():
 
 @app.route('/api/stats')
 def api_stats():
-    if request.args.get('key') != DIAG_KEY:
+    key_ok = request.args.get('key') == DIAG_KEY
+    origin = request.headers.get('Origin', '')
+    site_ok = bool(origin) and origin in ALLOWED_ORIGINS
+    if not key_ok and not site_ok:
         abort(403)
     from collections import Counter
     visits = load_visits()
