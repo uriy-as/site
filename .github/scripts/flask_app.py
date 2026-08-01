@@ -14,7 +14,7 @@ from flask import Flask, request, jsonify, Response, abort
 
 app = Flask(__name__)
 
-ALLOWED_ORIGINS = {'https://uriy-as.org', 'https://www.uriy-as.org'}
+ALLOWED_ORIGINS = {'https://uriy-as.org', 'https://www.uriy-as.org', 'https://astap.pythonanywhere.com'}
 
 _rate = defaultdict(list)
 _rate_lock = threading.Lock()
