@@ -104,6 +104,23 @@ def _load_diag_key():
 
 DIAG_KEY = _load_diag_key()
 
+STATS_PASSWORD = '2020'
+STATS_PASSWORD_FILE = '/home/Astap/mysite/.stats_password'
+def _load_stats_password():
+    p = os.environ.get('STATS_PASSWORD', '')
+    if p:
+        return p
+    try:
+        with open(STATS_PASSWORD_FILE) as f:
+            p = f.read().strip()
+        if p:
+            return p
+    except FileNotFoundError:
+        pass
+    return STATS_PASSWORD
+
+STATS_PASSWORD = _load_stats_password()
+
 def health_check():
     while True:
         time.sleep(3600)
@@ -636,11 +653,48 @@ def get_ga4_metrics():
         print(f'GA4 error: {e}')
         return None, None, None, None
 
-@app.route('/stats')
-@app.route('/stats.html')
+@app.route('/stats', methods=['GET', 'POST'])
+@app.route('/stats.html', methods=['GET', 'POST'])
 def stats():
-    if request.args.get('key') != DIAG_KEY:
-        abort(403)
+    if request.method == 'POST':
+        if request.form.get('pass') == STATS_PASSWORD:
+            return _render_stats()
+        return login_form('<b style="color:#d33">Неверный пароль</b>')
+    if request.args.get('key') == DIAG_KEY or request.args.get('pass') == STATS_PASSWORD:
+        return _render_stats()
+    return login_form('')
+
+def login_form(error=''):
+    return f'''<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вход в статистику</title>
+<style>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ font-family:Arial,Helvetica,sans-serif; background:#f5f5f5; color:#222; padding:20px; display:flex; align-items:center; justify-content:center; min-height:100vh; }}
+.login {{ background:#fff; padding:32px; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,0.12); width:100%; max-width:340px; text-align:center; }}
+.login h1 {{ font-size:1.2rem; margin-bottom:16px; color:#333; }}
+.login input {{ width:100%; padding:12px; font-size:1.1rem; border:1px solid #ccc; border-radius:6px; margin-bottom:12px; text-align:center; letter-spacing:0.15em; }}
+.login button {{ width:100%; padding:12px; background:#2563eb; color:#fff; border:none; border-radius:6px; font-size:1rem; cursor:pointer; }}
+.login button:hover {{ background:#1d4ed8; }}
+.login .err {{ margin-bottom:12px; }}
+.login .note {{ margin-top:14px; font-size:0.8rem; color:#888; }}
+</style>
+</head>
+<body>
+<form class="login" method="post">
+<h1>&#x1f512; Вход в статистику</h1>
+<div class="err">{error}</div>
+<input type="password" name="pass" placeholder="Пароль" autofocus required>
+<button type="submit">Войти</button>
+<p class="note">Доступ только для владельца сайта</p>
+</form>
+</body>
+</html>'''
+
+def _render_stats():
     visits = load_visits()
     real_visits = [v for v in visits if not is_internal(v.get('ip', ''))]
     total = len(visits)
