@@ -1,0 +1,29 @@
+name: Medium Auto-Post
+
+on:
+  schedule:
+    - cron: "20 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+      - name: Run Medium poster
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: "@webstudio_chanel"
+        run: python .github/scripts/medium_post.py
+      - name: Commit state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/scripts/medium_last.json
+          git diff --cached --quiet || git commit -m "Update Medium last-post state"
+          git push
