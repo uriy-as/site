@@ -10,6 +10,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, date, timedelta
 
 import requests
+import re
 from flask import Flask, request, jsonify, Response, abort
 
 app = Flask(__name__)
@@ -75,7 +76,20 @@ if not COHERE_API_KEY:
         pass
 TELEGRAM_TOKEN = os.environ.get('TG_BOT_TOKEN') or ''
 ADMIN_CHAT_ID = '1994948658'
-PA_API_TOKEN = '365fa83e268c2e01b27bd39cb74ea400862602bc'
+PA_TOKEN_FILE = '/home/Astap/mysite/.pa_token'
+def _load_pa_token():
+    t = os.environ.get('PA_API_TOKEN', '')
+    if t:
+        return t
+    try:
+        with open(PA_TOKEN_FILE) as f:
+            t = f.read().strip()
+        if t:
+            return t
+    except FileNotFoundError:
+        pass
+    return ''
+PA_API_TOKEN = _load_pa_token()
 PA_USER = 'Astap'
 PA_BASE = f'https://www.pythonanywhere.com/api/v0/user/{PA_USER}'
 COHERE_MODEL = 'command-r-08-2024'
@@ -104,7 +118,7 @@ def _load_diag_key():
 
 DIAG_KEY = _load_diag_key()
 
-STATS_PASSWORD = '2020'
+STATS_PASSWORD = ''
 STATS_PASSWORD_FILE = '/home/Astap/mysite/.stats_password'
 def _load_stats_password():
     p = os.environ.get('STATS_PASSWORD', '')
@@ -117,7 +131,7 @@ def _load_stats_password():
             return p
     except FileNotFoundError:
         pass
-    return STATS_PASSWORD
+    return ''
 
 STATS_PASSWORD = _load_stats_password()
 
@@ -288,6 +302,24 @@ def detect_device(ua):
         return 'bot'
     return 'desktop'
 
+_BOT_UA_MARKERS = [
+    'headlesschrome', 'phantomjs', 'python-requests', 'python-urllib',
+    'curl/', 'wget/', 'okhttp', 'apache-httpclient', 'go-http-client',
+    'java/', 'node.js', 'axios', 'bot', 'crawler', 'spider', 'slurp',
+    'bingpreview', 'majestic-', 'ahrefs', 'semrush', 'dotbot', 'petalbot',
+    'yandexbot', 'googlebot', 'applebot', 'gptbot', 'bytespider',
+    'facebookexternalhit', 'linkedinbot',
+]
+_ANDROID_K_RE = re.compile(r'linux; android [\d.]+; k\)')
+
+def is_bot(ua):
+    u = (ua or '').lower()
+    if not u.strip():
+        return True
+    if _ANDROID_K_RE.search(u):
+        return True
+    return any(m in u for m in _BOT_UA_MARKERS)
+
 PIXEL_GIF = base64.b64decode(
     'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 )
@@ -303,7 +335,7 @@ def pixel():
     screen = request.args.get('screen', '')
     ua = request.headers.get('User-Agent', '')
     dev = detect_device(ua)
-    if dev not in ('bot', 'unknown') and not is_internal(real_ip()):
+    if not is_bot(ua) and not is_internal(real_ip()) and rate_limit(f'visit:{real_ip()}', 60, 3600):
         visits = load_visits()
         visits.append({
             'page': page, 'ref': ref, 'screen': screen, 'device': dev,
@@ -331,7 +363,7 @@ def visit():
     ua = request.headers.get('User-Agent', '')
     dev = detect_device(ua)
     page = data.get('page', '/')
-    if dev not in ('bot', 'unknown') and not is_internal(real_ip()):
+    if not is_bot(ua) and not is_internal(real_ip()) and rate_limit(f'visit:{real_ip()}', 60, 3600):
         visits = load_visits()
         visits.append({
             'page': page, 'ref': data.get('ref', ''), 'screen': data.get('screen', ''), 'device': dev,
@@ -394,6 +426,8 @@ def save_lead():
 
 @app.route('/api/stats')
 def api_stats():
+    if not rate_limit(f'stats-api:{real_ip()}', 30, 60):
+        abort(429)
     key_ok = request.args.get('key') == DIAG_KEY
     origin = request.headers.get('Origin', '')
     site_ok = bool(origin) and origin in ALLOWED_ORIGINS
@@ -653,12 +687,37 @@ def get_ga4_metrics():
         print(f'GA4 error: {e}')
         return None, None, None, None
 
+_LOGIN_FAILS = defaultdict(list)
+_LOGIN_FAILS_LOCK = threading.Lock()
+
+def _login_locked(ip):
+    with _LOGIN_FAILS_LOCK:
+        fails = [t for t in _LOGIN_FAILS[ip] if time.time() - t < 600]
+        _LOGIN_FAILS[ip] = fails
+        return len(fails) >= 5
+
+def _record_login_fail(ip):
+    with _LOGIN_FAILS_LOCK:
+        _LOGIN_FAILS[ip].append(time.time())
+
+def _clear_login_fails(ip):
+    with _LOGIN_FAILS_LOCK:
+        _LOGIN_FAILS.pop(ip, None)
+
 @app.route('/stats', methods=['GET', 'POST'])
 @app.route('/stats.html', methods=['GET', 'POST'])
 def stats():
+    if not rate_limit(f'stats-page:{real_ip()}', 20, 60):
+        return login_form('<b style="color:#d33">Слишком много запросов, попробуйте позже</b>')
     if request.method == 'POST':
+        if _login_locked(real_ip()):
+            return login_form('<b style="color:#d33">Временно заблокировано (попробуйте позже)</b>')
         if request.form.get('pass') == STATS_PASSWORD:
+            _clear_login_fails(real_ip())
             return _render_stats()
+        _record_login_fail(real_ip())
+        if _login_locked(real_ip()):
+            send_tg(f'<b>🚫 Блокировка входа в статистику</b>\nIP: {real_ip()}')
         return login_form('<b style="color:#d33">Неверный пароль</b>')
     if request.args.get('key') == DIAG_KEY or request.args.get('pass') == STATS_PASSWORD:
         return _render_stats()
