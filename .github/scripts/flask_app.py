@@ -328,6 +328,16 @@ PIXEL_GIF = base64.b64decode(
 def index():
     return 'Visit tracker is running'
 
+@app.route('/robots.txt')
+def robots():
+    r = ('User-agent: *\n'
+         'Disallow: /stats\n'
+         'Disallow: /stats.html\n'
+         'Disallow: /api/\n'
+         'Disallow: /visit\n'
+         'Disallow: /pixel\n')
+    return Response(r, mimetype='text/plain')
+
 @app.route('/pixel')
 def pixel():
     page = request.args.get('page', '/')
@@ -335,7 +345,7 @@ def pixel():
     screen = request.args.get('screen', '')
     ua = request.headers.get('User-Agent', '')
     dev = detect_device(ua)
-    if not is_bot(ua) and not is_internal(real_ip()) and rate_limit(f'visit:{real_ip()}', 60, 3600):
+    if screen and not is_bot(ua) and not is_internal(real_ip()) and rate_limit(f'visit:{real_ip()}', 60, 3600):
         visits = load_visits()
         visits.append({
             'page': page, 'ref': ref, 'screen': screen, 'device': dev,
@@ -363,7 +373,7 @@ def visit():
     ua = request.headers.get('User-Agent', '')
     dev = detect_device(ua)
     page = data.get('page', '/')
-    if not is_bot(ua) and not is_internal(real_ip()) and rate_limit(f'visit:{real_ip()}', 60, 3600):
+    if data.get('screen') and not is_bot(ua) and not is_internal(real_ip()) and rate_limit(f'visit:{real_ip()}', 60, 3600):
         visits = load_visits()
         visits.append({
             'page': page, 'ref': data.get('ref', ''), 'screen': data.get('screen', ''), 'device': dev,
