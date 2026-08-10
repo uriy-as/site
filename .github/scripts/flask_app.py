@@ -66,6 +66,7 @@ def cors_preflight():
 
 STATS_FILE = '/home/Astap/mysite/visits.json'
 LEADS_FILE = '/home/Astap/mysite/leads.json'
+BOT_HITS_FILE = '/home/Astap/mysite/bot_hits.json'
 
 COHERE_API_KEY = os.environ.get('COHERE_API_KEY', '')
 if not COHERE_API_KEY:
@@ -277,6 +278,23 @@ def load_visits():
 def save_visits(visits):
     save_json(STATS_FILE, visits[-200:])
 
+def load_bot_hits():
+    return load_json(BOT_HITS_FILE)
+
+def save_bot_hits(hits):
+    save_json(BOT_HITS_FILE, hits[-500:])
+
+def record_bot_hit(page, ua):
+    ip = real_ip()
+    if not rate_limit(f'bothit:{ip}', 20, 3600):
+        return
+    hits = load_bot_hits()
+    hits.append({
+        'page': page, 'ip': ip, 'ua': ua,
+        'date': datetime.utcnow().isoformat()
+    })
+    save_bot_hits(hits)
+
 INTERNAL_IPS = {'10.0.5.156', '10.0.0.0/8'}
 
 def is_internal(ip):
@@ -345,6 +363,8 @@ def pixel():
     screen = request.args.get('screen', '')
     ua = request.headers.get('User-Agent', '')
     dev = detect_device(ua)
+    if screen and is_bot(ua):
+        record_bot_hit(page, ua)
     if screen and not is_bot(ua) and not is_internal(real_ip()) and rate_limit(f'visit:{real_ip()}', 60, 3600):
         visits = load_visits()
         visits.append({
@@ -373,6 +393,8 @@ def visit():
     ua = request.headers.get('User-Agent', '')
     dev = detect_device(ua)
     page = data.get('page', '/')
+    if data.get('screen') and is_bot(ua):
+        record_bot_hit(page, ua)
     if data.get('screen') and not is_bot(ua) and not is_internal(real_ip()) and rate_limit(f'visit:{real_ip()}', 60, 3600):
         visits = load_visits()
         visits.append({
@@ -446,6 +468,7 @@ def api_stats():
     from collections import Counter
     visits = load_visits()
     leads = load_leads()
+    bot_hits = load_bot_hits()
     today_str = date.today().isoformat()
     real_visits = [v for v in visits if not is_internal(v.get('ip', ''))]
     today_real = sum(1 for v in real_visits if v['date'].startswith(today_str))
@@ -460,6 +483,9 @@ def api_stats():
         'real_ips': len(set(v['ip'] for v in real_visits)),
         'days_recorded': len(set(v['date'][:10] for v in visits)),
         'leads_count': len(leads),
+        'bot_hits': len(bot_hits),
+        'bot_hits_today': sum(1 for b in bot_hits if b['date'].startswith(today_str)),
+        'bot_ips': len(set(b['ip'] for b in bot_hits)),
         'pages': [{'path': p, 'count': c} for p, c in page_counts],
         'devices': [{'type': d, 'count': c} for d, c in device_counts.items()],
         'last_10': [{'date': v['date'][:19].replace('T', ' '), 'page': v.get('page', '/'), 'device': v.get('device', '')} for v in reversed(visits[-10:])],
@@ -774,6 +800,10 @@ def _render_stats():
     unique_days = len(set(v['date'][:10] for v in visits))
     unique_ips = len(set(v['ip'] for v in visits))
     real_ips = len(set(v['ip'] for v in real_visits))
+    bot_hits = load_bot_hits()
+    today_str_bot = date.today().isoformat()
+    bot_today = sum(1 for b in bot_hits if b['date'].startswith(today_str_bot))
+    bot_ips = len(set(b['ip'] for b in bot_hits))
 
     page_counts = Counter(v.get('page', '/') for v in visits)
 
@@ -810,6 +840,14 @@ def _render_stats():
         contact_info = ' | '.join(filter(None, [name, phone, email]))
         lead_rows += f'<tr><td>{d}</td><td>{html.escape(contact_info)}</td><td>{html.escape(msg)}</td><td>{ip}</td></tr>'
 
+    bot_rows = ''
+    for b in reversed(bot_hits[-50:]):
+        d = b['date'][:19].replace('T', ' ')
+        bpage = html.escape(b.get('page', '/'))
+        bip = html.escape(b.get('ip', ''))
+        bua = html.escape((b.get('ua', '') or '')[:80])
+        bot_rows += f'<tr><td>{d}</td><td>{bpage}</td><td>{bip}</td><td>{bua}</td></tr>'
+
     ga4_users, ga4_views, ga4_new, ga4_pages = get_ga4_metrics()
     ga4_block = ''
     if ga4_users is not None:
@@ -841,6 +879,7 @@ h1 {{ font-size:1.4rem; margin-bottom:16px; color:#333; }}
 .card .label {{ font-size:0.8rem; color:#666; margin-top:2px; }}
 .card.green .num {{ color:#16a34a; }}
 .card.orange .num {{ color:#ea580c; }}
+.card.red .num {{ color:#d33; }}
 h2 {{ font-size:1.1rem; margin:20px 0 10px; color:#444; }}
 table {{ width:100%; border-collapse:collapse; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.1); }}
 th, td {{ padding:8px 12px; text-align:left; border-bottom:1px solid #eee; font-size:0.88rem; }}
@@ -861,6 +900,9 @@ a:hover {{ text-decoration:underline; }}
 <div class="stats">
     <div class="card orange"><div class="num">{total}</div><div class="label">Всего визитов (с тех.)</div></div>
     <div class="card"><div class="num">{today_count}</div><div class="label">Сегодня всего</div></div>
+    <div class="card red"><div class="num">{len(bot_hits)}</div><div class="label">Ботов всего</div></div>
+    <div class="card red"><div class="num">{bot_today}</div><div class="label">Ботов сегодня</div></div>
+    <div class="card red"><div class="num">{bot_ips}</div><div class="label">IP ботов</div></div>
     <div class="card"><div class="num">
         <a href="https://metrica.yandex.com/dashboard?id=109350815" target="_blank">&#x2197;</a>
     </div><div class="label">Яндекс.Метрика</div></div>
@@ -874,6 +916,9 @@ a:hover {{ text-decoration:underline; }}
 
 <h2>&#x1f4e8; Заявки</h2>
 <table><thead><tr><th>Дата</th><th>Контакты</th><th>Сообщение</th><th>IP</th></tr></thead><tbody>{lead_rows}</tbody></table>
+
+<h2>&#x1f41e; Последние заблокированные боты</h2>
+<table><thead><tr><th>Дата</th><th>Страница</th><th>IP</th><th>User-Agent</th></tr></thead><tbody>{bot_rows}</tbody></table>
 
 <h2>&#x1f4c4; Последние 50 визитов</h2>
 <table><thead><tr><th>Дата</th><th>Страница</th><th>Устройство</th><th>IP</th></tr></thead><tbody>{rows}</tbody></table>
