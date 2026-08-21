@@ -106,7 +106,8 @@ for url in api_urls:
         r = s.post(url, files={'content': ('flask_app.py', content)},
                    headers={'Referer': f'{BASE}/user/{USER}/webapps/'},
                    timeout=30)
-        print(f'   {url.split(USER+\"/\")[1]}: {r.status_code}')
+        short = url.split(USER + '/')[1]
+        print(f'   {short}: {r.status_code}')
         if r.status_code in (200, 201):
             print(f'   SUCCESS via API v0!')
             break
