@@ -10,21 +10,22 @@ BASE = 'https://www.pythonanywhere.com'
 USER = os.environ.get('PA_USERNAME', '').strip()
 PASSWORD = os.environ.get('PA_PASSWORD', '').strip()
 DOMAIN = os.environ.get('PA_DOMAIN', '').strip() or f'{USER}.pythonanywhere.com'
-FLASK_FILE = os.environ.get('FLASK_FILE', '.github/scripts/flask_app.py')
+SOURCE_FILE = os.environ.get('FLASK_FILE', '.github/scripts/flask_app.py')
+REMOTE_FILE = os.environ.get('REMOTE_FILE', 'flask_app.py')
 
 if not USER or not PASSWORD:
     print('ERROR: PA_USERNAME and PA_PASSWORD env vars are required')
     sys.exit(1)
 
-if not os.path.exists(FLASK_FILE):
-    print(f'ERROR: file not found: {FLASK_FILE}')
+if not os.path.exists(SOURCE_FILE):
+    print(f'ERROR: file not found: {SOURCE_FILE}')
     sys.exit(1)
 
-with open(FLASK_FILE, 'r', encoding='utf-8') as f:
+with open(SOURCE_FILE, 'r', encoding='utf-8') as f:
     content = f.read()
 
 file_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
-print(f'File: {FLASK_FILE} ({len(content)} bytes, hash: {file_hash[:12]}...)')
+print(f'File: {SOURCE_FILE} -> {REMOTE_FILE} ({len(content)} bytes, hash: {file_hash[:12]}...)')
 
 s = requests.Session()
 s.headers['User-Agent'] = 'deploy-flask (auto)'
@@ -67,7 +68,7 @@ if not csrf2:
 
 # Step 4: Check hash
 print('4. Check hash')
-file_url = f'{BASE}/user/{USER}/webapps/{DOMAIN}/home/{FLASK_FILE}'
+file_url = f'{BASE}/user/{USER}/webapps/{DOMAIN}/files/{REMOTE_FILE}'
 r = s.post(file_url, json={'action': 'check_hash', 'hash': file_hash},
            headers={'Referer': f'{BASE}/user/{USER}/webapps/',
                     'X-CSRFToken': csrf2,
