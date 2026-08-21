@@ -208,7 +208,9 @@ def handle_500(e):
 
 @app.errorhandler(404)
 def handle_404(e):
-    send_tg(f'<b>⚠️ Страница не найдена</b>\n{request.path}')
+    ua = request.headers.get('User-Agent', '')
+    if not is_bot(ua):
+        send_tg(f'<b>⚠️ Страница не найдена</b>\n{request.path}')
     return jsonify({'error': 'Not found'}), 404
 
 SYSTEM_PROMPT = """Ты — сотрудник веб-студии WebStudio (uriy-as.org). Общайся свободно и естественно, как живой человек. Отвечай на русском языке. Твоя задача — поддержать разговор, помочь с выбором услуги, подсказать по ценам.
@@ -455,6 +457,55 @@ def save_lead():
     parts.append(f'<a href="https://astap.pythonanywhere.com/stats?key={DIAG_KEY}">📊 Статистика</a>')
     send_tg('\n'.join(parts))
     return jsonify({'ok': True, 'count': len(load_leads())})
+
+PLISIO_SECRET = os.environ.get('PLISIO_SECRET_KEY', 'PehzUez7T-iMlysf6WroZPwnuQkEXMZDU_O1B0EoK89zT8krKFW_jg8Sb1KknFVi')
+
+@app.route('/api/crypto-pay')
+def crypto_pay():
+    if not rate_limit(f'crypto:{client_ip()}', 10, 300):
+        return jsonify({'error': 'Too many requests'}), 429
+    service = request.args.get('service', '').strip()
+    amount = request.args.get('amount', '').strip()
+    if not amount:
+        return jsonify({'error': 'Missing amount'}), 400
+    try:
+        amount_f = float(amount)
+    except ValueError:
+        return jsonify({'error': 'Invalid amount'}), 400
+    order_num = f'ws-{int(time.time())}'
+    params = {
+        'api_key': PLISIO_SECRET,
+        'source_currency': 'USD',
+        'source_amount': amount_f,
+        'order_number': order_num,
+        'order_name': service or 'WebStudio service',
+        'email': 'uriy.as59@yandex.com',
+        'success_invoice_url': 'https://uriy-as.org/services.html?paid=success',
+        'fail_invoice_url': 'https://uriy-as.org/services.html?paid=failed',
+        'callback_url': 'https://astap.pythonanywhere.com/plisio-callback',
+    }
+    try:
+        r = requests.get('https://api.plisio.net/api/v1/invoices/new', params=params, timeout=15)
+        data = r.json()
+        if data.get('status') == 'success':
+            return jsonify({'url': data['data']['invoice_url']})
+        else:
+            return jsonify({'error': data.get('data', {}).get('message', 'Plisio error')}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/plisio-callback', methods=['POST'])
+def plisio_callback():
+    data = request.form.to_dict() if request.form else (request.json or {})
+    status = data.get('status', '')
+    order = data.get('order_number', '')
+    amount = data.get('source_amount', data.get('amount', ''))
+    currency = data.get('currency', data.get('source_currency', 'USD'))
+    if status == 'completed':
+        send_tg(f'<b>💰 Оплата криптой получена!</b>\nЗаказ: {order}\nСумма: {amount} {currency}\nСтатус: completed')
+    elif status in ('expired', 'cancelled'):
+        send_tg(f'<b>⚠️ Оплата криптой не завершена</b>\nЗаказ: {order}\nСтатус: {status}')
+    return jsonify({'ok': True})
 
 @app.route('/api/stats')
 def api_stats():
