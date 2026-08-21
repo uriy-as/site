@@ -86,7 +86,8 @@ for url in urls_to_try:
                timeout=15)
     status = r.status_code
     is_json = 'json' in r.headers.get('content-type', '')
-    print(f'   {url.split(USER+\"/\")[1]}: {status} json={is_json}')
+    short = url.split(USER + '/')[1]
+    print(f'   {short}: {status} json={is_json}')
     if status == 200 and is_json:
         print(f'   FOUND! Using: {url}')
         break
