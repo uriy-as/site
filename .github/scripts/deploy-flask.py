@@ -104,7 +104,8 @@ api_urls = [
 for url in api_urls:
     try:
         r = s.post(url, files={'content': ('flask_app.py', content)},
-                   headers={'Referer': f'{BASE}/user/{USER}/webapps/'},
+                   headers={'Referer': f'{BASE}/user/{USER}/webapps/',
+                            'X-CSRFToken': csrf2},
                    timeout=30)
         short = url.split(USER + '/')[1]
         print(f'   {short}: {r.status_code}')
