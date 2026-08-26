@@ -280,6 +280,28 @@ def load_visits():
 def save_visits(visits):
     save_json(STATS_FILE, visits[-200:])
 
+def count_sessions(visits, since=None):
+    from datetime import datetime, timedelta
+    by_ip = {}
+    for v in sorted(visits, key=lambda v: v.get('date', '')):
+        ip = v.get('ip', '')
+        if not ip:
+            continue
+        if since and not v.get('date', '').startswith(since):
+            continue
+        try:
+            dt = datetime.fromisoformat(v.get('date', ''))
+        except Exception:
+            continue
+        by_ip.setdefault(ip, []).append(dt)
+    total = 0
+    for ip, times in by_ip.items():
+        total += 1
+        for i in range(1, len(times)):
+            if (times[i] - times[i-1]) >= timedelta(minutes=30):
+                total += 1
+    return total
+
 def load_bot_hits():
     return load_json(BOT_HITS_FILE)
 
@@ -522,14 +544,14 @@ def api_stats():
     bot_hits = load_bot_hits()
     today_str = date.today().isoformat()
     real_visits = [v for v in visits if not is_internal(v.get('ip', ''))]
-    today_real = sum(1 for v in real_visits if v['date'].startswith(today_str))
+    today_real = count_sessions(real_visits, since=today_str)
     page_counts = Counter(v.get('page', '/') for v in visits).most_common(10)
     device_counts = Counter(v.get('device', 'unknown') for v in visits)
     return jsonify({
         'today_real': today_real,
-        'total_real': len(real_visits),
+        'total_real': count_sessions(real_visits),
         'total_raw': len(visits),
-        'today_raw': sum(1 for v in visits if v['date'].startswith(today_str)),
+        'today_raw': count_sessions(visits, since=today_str),
         'unique_ips': len(set(v['ip'] for v in visits)),
         'real_ips': len(set(v['ip'] for v in real_visits)),
         'days_recorded': len(set(v['date'][:10] for v in visits)),
@@ -844,10 +866,10 @@ def _render_stats():
     visits = load_visits()
     real_visits = [v for v in visits if not is_internal(v.get('ip', ''))]
     total = len(visits)
-    real_total = len(real_visits)
+    real_total = count_sessions(real_visits)
     today_str = date.today().isoformat()
-    today_count = sum(1 for v in visits if v['date'].startswith(today_str))
-    today_real = sum(1 for v in real_visits if v['date'].startswith(today_str))
+    today_count = count_sessions(visits, since=today_str)
+    today_real = count_sessions(real_visits, since=today_str)
     unique_days = len(set(v['date'][:10] for v in visits))
     unique_ips = len(set(v['ip'] for v in visits))
     real_ips = len(set(v['ip'] for v in real_visits))
@@ -949,7 +971,7 @@ a:hover {{ text-decoration:underline; }}
     <div class="card"><div class="num">{unique_days}</div><div class="label">Дней в записи</div></div>
 </div>
 <div class="stats">
-    <div class="card orange"><div class="num">{total}</div><div class="label">Всего визитов (с тех.)</div></div>
+    <div class="card orange"><div class="num">{total}</div><div class="label">Всего хитов (загрузок)</div></div>
     <div class="card"><div class="num">{today_count}</div><div class="label">Сегодня всего</div></div>
     <div class="card red"><div class="num">{len(bot_hits)}</div><div class="label">Ботов всего</div></div>
     <div class="card red"><div class="num">{bot_today}</div><div class="label">Ботов сегодня</div></div>
