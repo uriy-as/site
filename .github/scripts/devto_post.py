@@ -72,6 +72,13 @@ def main():
             print(f"  URL: {result.get('url')}")
             state["published"].append(fname)
             save_state(state)
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 422:
+                print(f"  ALREADY PUBLISHED (422 - skipping): {fname}")
+                state["published"].append(fname)
+                save_state(state)
+            else:
+                print(f"  ERROR: {e}")
         except Exception as e:
             print(f"  ERROR: {e}")
 
