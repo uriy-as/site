@@ -69,52 +69,59 @@ if not csrf2:
     sys.exit(1)
 print(f'   CSRF: {csrf2[:10]}...')
 
-# Try file editor page to find the correct path
-print('4. Try file editor URL patterns')
-urls_to_try = [
-    f'{BASE}/user/{USER}/webapps/{DOMAIN}/files/flask_app.py',
-    f'{BASE}/user/{USER}/files/path/home/{USER}/{DOMAIN}/flask_app.py',
-    f'{BASE}/user/{USER}/files/path/home/{USER}/flask_app.py',
-    f'{BASE}/user/{USER}/webapps/{DOMAIN}/home/flask_app.py',
+# Candidate file paths on the server, in priority order.
+# PA serves the app from one of these; the previous version accepted the first
+# HTTP 200 from the files API, which silently wrote the file to a path the web
+# app does not load from. Now every upload is verified by reading it back.
+candidates = [
+    f'/home/{USER}/flask_app.py',
+    f'/home/{USER}/{DOMAIN}/flask_app.py',
 ]
 
-for url in urls_to_try:
-    r = s.post(url, json={'action': 'check_hash', 'hash': file_hash},
-               headers={'Referer': f'{BASE}/user/{USER}/webapps/',
-                        'X-CSRFToken': csrf2,
-                        'Content-Type': 'application/json'},
-               timeout=15)
-    status = r.status_code
-    is_json = 'json' in r.headers.get('content-type', '')
-    short = url.split(USER + '/')[1]
-    print(f'   {short}: {status} json={is_json}')
-    if status == 200 and is_json:
-        print(f'   FOUND! Using: {url}')
-        break
-    # Also try the upload directly
-    if status != 404:
-        print(f'   Response: {r.text[:200]}')
+def api_path(remote_path):
+    return f'{BASE}/api/v0/user/{USER}/files/path{remote_path}'
 
-# Try API v0 approach (upload via multipart)
-print('5. Try PA API v0 (files endpoint)')
-api_urls = [
-    f'{BASE}/api/v0/user/{USER}/files/path/home/{USER}/{DOMAIN}/flask_app.py',
-    f'{BASE}/api/v0/user/{USER}/files/path/home/{USER}/flask_app.py',
-]
-for url in api_urls:
+def upload(remote_path):
+    return s.post(api_path(remote_path), files={'content': ('flask_app.py', content)},
+                  headers={'Referer': f'{BASE}/user/{USER}/webapps/',
+                           'X-CSRFToken': csrf2},
+                  timeout=30)
+
+def verify(remote_path):
+    r = s.get(api_path(remote_path),
+              headers={'Referer': f'{BASE}/user/{USER}/webapps/',
+                       'X-CSRFToken': csrf2},
+              timeout=30)
+    if r.status_code != 200:
+        return False, f'HTTP {r.status_code}'
+    remote_hash = hashlib.sha256(r.content).hexdigest()
+    if remote_hash == file_hash:
+        return True, 'hash matches'
+    return False, f'hash differs (remote {remote_hash[:12]}, local {file_hash[:12]})'
+
+print('5. Upload via PA API v0 with read-back verification')
+verified_path = None
+for remote_path in candidates:
     try:
-        r = s.post(url, files={'content': ('flask_app.py', content)},
-                   headers={'Referer': f'{BASE}/user/{USER}/webapps/',
-                            'X-CSRFToken': csrf2},
-                   timeout=30)
-        short = url.split(USER + '/')[1]
-        print(f'   {short}: {r.status_code}')
-        if r.status_code in (200, 201):
-            print(f'   SUCCESS via API v0!')
-            break
-        print(f'   Response: {r.text[:200]}')
+        r = upload(remote_path)
     except Exception as e:
-        print(f'   Error: {e}')
+        print(f'   {remote_path}: ERROR {e}')
+        continue
+    print(f'   {remote_path}: upload HTTP {r.status_code}')
+    if r.status_code not in (200, 201):
+        print(f'      {r.text[:160]}')
+        continue
+    ok, detail = verify(remote_path)
+    print(f'      verify: {"OK - " if ok else "FAILED - "}{detail}')
+    if ok:
+        verified_path = remote_path
+        break
+
+if not verified_path:
+    print('ERROR: file was not verified at any known path - web app still runs old code')
+    sys.exit(1)
+
+print(f'   VERIFIED at {verified_path}')
 
 # Reload
 print('6. Reload web app')
@@ -122,4 +129,7 @@ reload_url = f'{BASE}/user/{USER}/webapps/{DOMAIN}/reload'
 r = s.post(reload_url, data={'csrfmiddlewaretoken': csrf2},
            headers={'Referer': f'{BASE}/user/{USER}/webapps/'}, timeout=30)
 print(f'   Reload: {r.status_code}')
+if r.status_code != 200:
+    print('ERROR: reload failed')
+    sys.exit(1)
 print('DONE')
