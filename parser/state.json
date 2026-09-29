@@ -1,0 +1,221 @@
+{
+  "updated": "2026-09-29T20:05:02+00:00",
+  "sources": {
+    "Zharkov.dev": {
+      "prices": [
+        {
+          "label": "Лендінг",
+          "value": 150.0,
+          "currency": "USD",
+          "raw": "$150"
+        },
+        {
+          "label": "Сайт",
+          "value": 300.0,
+          "currency": "USD",
+          "raw": "$300"
+        },
+        {
+          "label": "Інтернет-магазин",
+          "value": 800.0,
+          "currency": "USD",
+          "raw": "$800"
+        },
+        {
+          "label": "Telegram-бот",
+          "value": 150.0,
+          "currency": "USD",
+          "raw": "$150"
+        },
+        {
+          "label": "Telegram App",
+          "value": 350.0,
+          "currency": "USD",
+          "raw": "$350"
+        },
+        {
+          "label": "CRM-система",
+          "value": 100.0,
+          "currency": "USD",
+          "raw": "$100"
+        },
+        {
+          "label": "База лідів",
+          "value": 30.0,
+          "currency": "USD",
+          "raw": "$30"
+        },
+        {
+          "label": "Підтримка",
+          "value": 20.0,
+          "currency": "USD",
+          "raw": "$20"
+        }
+      ],
+      "checked_at": "2026-09-29T20:04:42+00:00",
+      "url": "https://zharkov.dev/services/telegram-bots"
+    },
+    "MaxWeb": {
+      "prices": [
+        {
+          "label": "Landing Page Для продажу одного товару чи послуги",
+          "value": 15000.0,
+          "currency": "UAH",
+          "raw": "15 000 ₴"
+        },
+        {
+          "label": "Найчастіше обирають Сайт-візитка Для презентації компанії в Інтернеті",
+          "value": 20000.0,
+          "currency": "UAH",
+          "raw": "20 000 ₴"
+        },
+        {
+          "label": "Промо-сайт Для запуску нового бренду чи події",
+          "value": 25000.0,
+          "currency": "UAH",
+          "raw": "25 000 ₴"
+        },
+        {
+          "label": "Корпоративний сайт Повноцінний сайт для середнього бізнесу",
+          "value": 40000.0,
+          "currency": "UAH",
+          "raw": "40 000 ₴"
+        },
+        {
+          "label": "Мультимовний сайт Для виходу на міжнародний ринок (Європа)",
+          "value": 55000.0,
+          "currency": "UAH",
+          "raw": "55 000 ₴"
+        },
+        {
+          "label": "Сайт під ключ Комплексне рішення «Без турбот»",
+          "value": 75000.0,
+          "currency": "UAH",
+          "raw": "75 000 ₴"
+        },
+        {
+          "label": "Технічне SEO Підготовка сайту до просування в Google",
+          "value": 15000.0,
+          "currency": "UAH",
+          "raw": "15 000 ₴"
+        },
+        {
+          "label": "Технічна підтримка Стабільність та безпека вашого бізнесу",
+          "value": 5000.0,
+          "currency": "UAH",
+          "raw": "5 000 ₴"
+        }
+      ],
+      "checked_at": "2026-09-29T20:04:52+00:00",
+      "url": "https://maxweb.com.ua/price"
+    },
+    "Web-Lift": {
+      "prices": [
+        {
+          "label": "Термін: 2–3 робочі дні Запустити бота",
+          "value": 90.0,
+          "currency": "USD",
+          "raw": "$ 90"
+        },
+        {
+          "label": "Лендінг + Telegram-бот → Заявки в бот і Google Таблицю",
+          "value": 150.0,
+          "currency": "USD",
+          "raw": "$150"
+        },
+        {
+          "label": "Магазин на Horoshop → Запуск магазину під ключ",
+          "value": 300.0,
+          "currency": "USD",
+          "raw": "$300"
+        },
+        {
+          "label": "Акція · −25% Заявки з сайту вже за 5 днів Лендінг + Telegram-бот + Goo",
+          "value": 150.0,
+          "currency": "USD",
+          "raw": "$150"
+        },
+        {
+          "label": "Термін: 5 робочих днів",
+          "value": 150.0,
+          "currency": "USD",
+          "raw": "$150"
+        }
+      ],
+      "checked_at": "2026-09-29T20:04:55+00:00",
+      "url": "https://web-lift.com/rozrobka-telegram-botiv/"
+    },
+    "SUDUS": {
+      "prices": [
+        {
+          "label": "ОРИЕНТИРОВОЧНАЯ СТОИМОСТЬ обновляется вживую 18 000",
+          "value": 23000.0,
+          "currency": "UAH",
+          "raw": "23 000 грн"
+        },
+        {
+          "label": "Стоимость",
+          "value": 5000.0,
+          "currency": "UAH",
+          "raw": "5 000 грн"
+        },
+        {
+          "label": "Стоимость",
+          "value": 18000.0,
+          "currency": "UAH",
+          "raw": "18 000 грн"
+        },
+        {
+          "label": "Стоимость",
+          "value": 35000.0,
+          "currency": "UAH",
+          "raw": "35 000 грн"
+        },
+        {
+          "label": "Простые проекты Сайт-визитка, бизнес-сайт, сайт ресторана, Telegram-бо",
+          "value": 2000.0,
+          "currency": "UAH",
+          "raw": "2 000 грн"
+        },
+        {
+          "label": "Средние проекты Интернет-магазин, сайт-каталог, сайт клиники, система",
+          "value": 3500.0,
+          "currency": "UAH",
+          "raw": "3 500 грн"
+        },
+        {
+          "label": "Сложные проекты Портал, образовательная платформа, SaaS, ERP, медицинс",
+          "value": 4000.0,
+          "currency": "UAH",
+          "raw": "4 000 грн"
+        }
+      ],
+      "checked_at": "2026-09-29T20:04:59+00:00",
+      "url": "https://sudus.team/ru/prices"
+    },
+    "Web24": {
+      "prices": [
+        {
+          "label": "БЮДЖЕТНЫЙ САЙТ (для старта)",
+          "value": 10000.0,
+          "currency": "UAH",
+          "raw": "10000 грн"
+        },
+        {
+          "label": "СРЕДНИЙ САЙТ для БИЗНЕСА",
+          "value": 32000.0,
+          "currency": "UAH",
+          "raw": "32000 грн"
+        },
+        {
+          "label": "ПРЕМИУМ САЙТ для КОМПАНИИ",
+          "value": 48000.0,
+          "currency": "UAH",
+          "raw": "48000 грн"
+        }
+      ],
+      "checked_at": "2026-09-29T20:05:02+00:00",
+      "url": "https://web24.com.ua/price-list/"
+    }
+  }
+}
