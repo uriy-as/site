@@ -69,23 +69,40 @@ if not csrf2:
     sys.exit(1)
 print(f'   CSRF: {csrf2[:10]}...')
 
-# Candidate file paths on the server, in priority order.
-# PA serves the app from one of these; the previous version accepted the first
-# HTTP 200 from the files API, which silently wrote the file to a path the web
-# app does not load from. Now every upload is verified by reading it back.
-candidates = [
+# Discover which .py file the web app actually loads. Uploading to the wrong
+# path is the failure mode that made an earlier run report success while the
+# served code stayed unchanged.
+discovered = []
+for match in re.finditer(r'/home/[^"\'<>\s\\]+?\.py', r.text):
+    path = match.group(0)
+    if path not in discovered:
+        discovered.append(path)
+print(f'   Files referenced by the web app: {len(discovered)}')
+for path in discovered[:15]:
+    print(f'     {path}')
+
+# Candidate file paths on the server: whatever the webapp config references
+# first (that is the file the running app imports), then the usual locations.
+candidates = discovered + [
     f'/home/{USER}/flask_app.py',
     f'/home/{USER}/{DOMAIN}/flask_app.py',
 ]
+candidates = [p for p in candidates if p.endswith('flask_app.py')] or candidates
+seen_paths = set()
+candidates = [p for p in candidates if not (p in seen_paths or seen_paths.add(p))]
+print(f'   Upload targets: {candidates}')
 
+print('5. Upload via PA API v0 with read-back verification')
 def api_path(remote_path):
     return f'{BASE}/api/v0/user/{USER}/files/path{remote_path}'
+
 
 def upload(remote_path):
     return s.post(api_path(remote_path), files={'content': ('flask_app.py', content)},
                   headers={'Referer': f'{BASE}/user/{USER}/webapps/',
                            'X-CSRFToken': csrf2},
                   timeout=30)
+
 
 def verify(remote_path):
     r = s.get(api_path(remote_path),
@@ -99,7 +116,7 @@ def verify(remote_path):
         return True, 'hash matches'
     return False, f'hash differs (remote {remote_hash[:12]}, local {file_hash[:12]})'
 
-print('5. Upload via PA API v0 with read-back verification')
+
 verified_path = None
 for remote_path in candidates:
     try:
