@@ -8,6 +8,7 @@ import threading
 import time
 from collections import Counter, defaultdict
 from datetime import datetime, date, timedelta
+from urllib.parse import urlparse
 
 import requests
 import re
@@ -344,6 +345,26 @@ def detect_device(ua):
         return 'bot'
     return 'desktop'
 
+_SOURCE_GROUPS = [
+    ('telegram', ['t.me', 'telegram.org', 'telegram.me']),
+    ('directory', ['2gis.', 'fl.ru', 'kwork.', 'weblancer.', 'fiverr.', 'upwork.', 'workspace.ru', 'google.com/maps', 'yandex.ru/maps']),
+    ('search', ['google.', 'bing.', 'yandex.', 'duckduckgo.', 'search.brave.', 'ecosia.', 'baidu.']),
+    ('content', ['dev.to', 'medium.com', 'vc.ru', 'habr.com', 'dtf.ru', 'reddit.com', 'pinterest.', 'linkedin.']),
+    ('social', ['facebook.', 'instagram.', 'vk.com', 'ok.ru', 'x.com', 'twitter.', 'threads.', 'tiktok.']),
+]
+
+def source_of(ref):
+    r = (ref or '').strip().lower()
+    if not r:
+        return 'direct'
+    host = r.split('://', 1)[-1].split('/', 1)[0].split('?', 1)[0]
+    if host in ('uriy-as.org', 'www.uriy-as.org'):
+        return 'direct'
+    for name, markers in _SOURCE_GROUPS:
+        if any(m in host for m in markers):
+            return name
+    return host or 'direct'
+
 _BOT_UA_MARKERS = [
     'headlesschrome', 'phantomjs', 'python-requests', 'python-urllib',
     'curl/', 'wget/', 'okhttp', 'apache-httpclient', 'go-http-client',
@@ -455,12 +476,22 @@ def save_lead():
         return jsonify({'ok': False})
     if len(message) > 5000 or len(data.get('name', '')) > 200 or len(data.get('email', '')) > 200 or len(data.get('phone', '')) > 100:
         return jsonify({'ok': False}), 400
+    referer = request.headers.get('Referer', '')
+    page = (data.get('page') or '').strip()
+    ref = (data.get('ref') or '').strip()
+    if not page and referer:
+        page = urlparse(referer).path or '/'
+    if not ref:
+        ref = referer
     leads = load_leads()
     leads.append({
         'name': data.get('name', ''),
         'email': data.get('email', ''),
         'phone': data.get('phone', ''),
         'message': message,
+        'page': page[:200],
+        'ref': ref[:500],
+        'source': source_of(ref),
         'ip': real_ip(),
         'date': datetime.utcnow().isoformat()
     })
@@ -475,6 +506,9 @@ def save_lead():
         parts.append(f'Телефон: {phone}')
     if email:
         parts.append(f'Email: {email}')
+    if page:
+        parts.append(f'Страница: {page}')
+    parts.append(f'Источник: {source_of(ref)}')
     parts.append(f'Сообщение: {message}')
     parts.append(f'<a href="https://astap.pythonanywhere.com/stats?key={DIAG_KEY}">📊 Статистика</a>')
     send_tg('\n'.join(parts))
@@ -547,6 +581,9 @@ def api_stats():
     today_real = count_sessions(real_visits, since=today_str)
     page_counts = Counter(v.get('page', '/') for v in visits).most_common(10)
     device_counts = Counter(v.get('device', 'unknown') for v in visits)
+    real_sources = Counter(source_of(v.get('ref', '')) for v in real_visits)
+    lead_sources = Counter(l.get('source') or source_of(l.get('ref', '')) for l in leads)
+    lead_pages = Counter(l.get('page') or 'unknown' for l in leads)
     return jsonify({
         'today_real': today_real,
         'total_real': count_sessions(real_visits),
@@ -561,7 +598,10 @@ def api_stats():
         'bot_ips': len(set(b['ip'] for b in bot_hits)),
         'pages': [{'path': p, 'count': c} for p, c in page_counts],
         'devices': [{'type': d, 'count': c} for d, c in device_counts.items()],
-        'last_10': [{'date': v['date'][:19].replace('T', ' '), 'page': v.get('page', '/'), 'device': v.get('device', '')} for v in reversed(visits[-10:])],
+        'sources': [{'source': s, 'count': c} for s, c in real_sources.most_common(12)],
+        'lead_sources': [{'source': s, 'count': c} for s, c in lead_sources.most_common()],
+        'lead_pages': [{'page': p, 'count': c} for p, c in lead_pages.most_common()],
+        'last_10': [{'date': v['date'][:19].replace('T', ' '), 'page': v.get('page', '/'), 'device': v.get('device', ''), 'source': source_of(v.get('ref', ''))} for v in reversed(visits[-10:])],
     })
 
 @app.route('/api/chat', methods=['POST'])
