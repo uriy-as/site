@@ -418,6 +418,7 @@ def main():
     parser.add_argument('--report', default=str(DEFAULT_REPORT))
     parser.add_argument('--threshold', type=float, default=None, help='порог изменения, %%')
     parser.add_argument('--no-alert', action='store_true', help='не слать алерты в Telegram')
+    parser.add_argument('--always-alert', action='store_true', help='слать отчёт, даже если изменений нет')
     parser.add_argument('--dry-run', action='store_true', help='собрать, но не менять state.json')
     parser.add_argument('--only', default=None, help='снять только источники через запятую')
     args = parser.parse_args()
@@ -469,12 +470,14 @@ def main():
     changed_total = sum(len(e['delta'].get('changed', [])) for e in report['sources'])
     if not args.no_alert:
         message = build_tg_message(report, config)
-        if changed_total or not args.dry_run:
+        if changed_total or args.always_alert:
             ok, detail = send_tg(message, config)
             log(f'Telegram: {"отправлено" if ok else "не отправлено — " + detail}')
             if not ok:
                 print('--- сообщение, которое ушло бы в Telegram ---')
                 print(message)
+        else:
+            log('Telegram: изменений выше порога нет, уведомление не отправлялось')
     return 0
 
 
