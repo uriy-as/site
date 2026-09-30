@@ -1,5 +1,5 @@
 {
-  "updated": "2026-09-30T14:00:02+00:00",
+  "updated": "2026-09-30T16:33:55+00:00",
   "sources": {
     "Zharkov.dev": {
       "prices": [
@@ -52,7 +52,7 @@
           "raw": "$20"
         }
       ],
-      "checked_at": "2026-09-30T13:59:39+00:00",
+      "checked_at": "2026-09-30T16:33:38+00:00",
       "url": "https://zharkov.dev/services/telegram-bots"
     },
     "MaxWeb": {
@@ -106,7 +106,7 @@
           "raw": "5 000 ₴"
         }
       ],
-      "checked_at": "2026-09-30T13:59:50+00:00",
+      "checked_at": "2026-09-30T16:33:45+00:00",
       "url": "https://maxweb.com.ua/price"
     },
     "Web-Lift": {
@@ -142,7 +142,7 @@
           "raw": "$150"
         }
       ],
-      "checked_at": "2026-09-30T13:59:54+00:00",
+      "checked_at": "2026-09-30T16:33:48+00:00",
       "url": "https://web-lift.com/rozrobka-telegram-botiv/"
     },
     "SUDUS": {
@@ -190,7 +190,7 @@
           "raw": "4 000 грн"
         }
       ],
-      "checked_at": "2026-09-30T13:59:58+00:00",
+      "checked_at": "2026-09-30T16:33:51+00:00",
       "url": "https://sudus.team/ru/prices"
     },
     "Web24": {
@@ -214,8 +214,26 @@
           "raw": "48000 грн"
         }
       ],
-      "checked_at": "2026-09-30T14:00:02+00:00",
+      "checked_at": "2026-09-30T16:33:55+00:00",
       "url": "https://web24.com.ua/price-list/"
+    },
+    "PAS7 Studio": {
+      "prices": [
+        {
+          "label": "Сценарії, ролі, платежі, адмінка, аналітика та інтеграції",
+          "value": 100.0,
+          "currency": "EUR",
+          "raw": "€100"
+        },
+        {
+          "label": "бір даних з потрібних платформ із контролем помилок і стабільною робот",
+          "value": 150.0,
+          "currency": "EUR",
+          "raw": "€150"
+        }
+      ],
+      "checked_at": "2026-09-30T16:33:41+00:00",
+      "url": "https://pas7.com.ua/prices/uk/bot-development"
     }
   }
 }
