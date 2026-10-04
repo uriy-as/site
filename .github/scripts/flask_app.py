@@ -1,4 +1,6 @@
 ﻿import base64
+import hashlib
+import hmac
 import html
 import json
 import os
@@ -514,10 +516,26 @@ def save_lead():
     send_tg('\n'.join(parts))
     return jsonify({'ok': True, 'count': len(load_leads())})
 
-PLISIO_SECRET = os.environ.get('PLISIO_SECRET_KEY', 'PehzUez7T-iMlysf6WroZPwnuQkEXMZDU_O1B0EoK89zT8krKFW_jg8Sb1KknFVi')
+PLISIO_SECRET_FILE = '/home/Astap/mysite/.plisio_key'
+def _load_plisio_secret():
+    k = os.environ.get('PLISIO_SECRET_KEY', '')
+    if k:
+        return k
+    try:
+        with open(PLISIO_SECRET_FILE) as f:
+            k = f.read().strip()
+        if k:
+            return k
+    except FileNotFoundError:
+        pass
+    return ''
+
+PLISIO_SECRET = _load_plisio_secret()
 
 @app.route('/api/crypto-pay')
 def crypto_pay():
+    if not PLISIO_SECRET:
+        return jsonify({'error': 'Crypto payments are not configured'}), 503
     if not rate_limit(f'crypto:{client_ip()}', 10, 300):
         return jsonify({'error': 'Too many requests'}), 429
     service = request.args.get('service', '').strip()
@@ -550,9 +568,20 @@ def crypto_pay():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+def _plisio_sig_ok(data):
+    provided = str(data.get('signature', '')).strip()
+    if not PLISIO_SECRET or not provided:
+        return False
+    payload = {k: v for k, v in data.items() if k != 'signature'}
+    msg = '&'.join(f'{k}={payload[k]}' for k in sorted(payload))
+    expected = hmac.new(PLISIO_SECRET.encode(), msg.encode(), hashlib.sha512).hexdigest()
+    return hmac.compare_digest(expected, provided.lower())
+
 @app.route('/plisio-callback', methods=['POST'])
 def plisio_callback():
     data = request.form.to_dict() if request.form else (request.json or {})
+    if not _plisio_sig_ok(data):
+        abort(403)
     status = data.get('status', '')
     order = data.get('order_number', '')
     amount = data.get('source_amount', data.get('amount', ''))
