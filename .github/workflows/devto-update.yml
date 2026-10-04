@@ -1,0 +1,25 @@
+name: Update published Dev.to article
+
+on:
+  workflow_dispatch:
+    inputs:
+      article_id:
+        description: 'Numeric Dev.to article id (e.g. 4788500)'
+        required: true
+      source_file:
+        description: 'Path to the devto-*.md source, relative to repo root'
+        required: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests
+      - name: Update article
+        run: python .github/scripts/devto_update.py "${{ inputs.article_id }}" "${{ inputs.source_file }}"
+        env:
+          DEVTO_API_KEY: ${{ secrets.DEVTO_API_KEY }}
