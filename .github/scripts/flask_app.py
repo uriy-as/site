@@ -398,6 +398,7 @@ _CLOUD_PTR_MARKERS = (
 )
 _cloud_ip_cache = {}
 _cloud_lock = threading.Lock()
+cloud_warm = {'checked': 0, 'conclusive': 0, 'cloud': 0, 'running': True}
 
 def _skip_name(data, pos):
     """Пропуск DNS-имени: лейблы по 1+len, указатель C0 — конец имени (2 байта)."""
@@ -564,7 +565,7 @@ def warm_cloud_cache():
                     if hit is not None:
                         _cloud_ip_cache.pop(ip, None)
         if not pending:
-            return
+            break
         queue = iter(pending)
         qlock = threading.Lock()
 
@@ -575,7 +576,7 @@ def warm_cloud_cache():
                 if ip is None:
                     return
                 try:
-                    is_cloud_ip(ip, timeout=2.0, ptr=False)
+                    is_cloud_ip(ip, timeout=2.0)
                 except Exception:
                     pass
 
@@ -585,6 +586,13 @@ def warm_cloud_cache():
         for w in workers:
             w.join()
         time.sleep(1)
+
+    with _cloud_lock:
+        vals = list(_cloud_ip_cache.values())
+        cloud_warm['checked'] = len(vals)
+        cloud_warm['conclusive'] = sum(1 for v in vals if not v[1])
+        cloud_warm['cloud'] = sum(1 for v in vals if v[0])
+        cloud_warm['running'] = False
 
 PIXEL_GIF = base64.b64decode(
     'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
@@ -843,6 +851,7 @@ def api_stats():
         'total_cloud': len(cloud_visits),
         'today_cloud': today_cloud,
         'cloud_ips': len(set(v['ip'] for v in cloud_visits)),
+        'cloud_warm': dict(cloud_warm),
         'today_raw': count_sessions(visits, since=today_str),
         'unique_ips': len(set(v['ip'] for v in visits)),
         'real_ips': len(set(v['ip'] for v in human_visits)),
