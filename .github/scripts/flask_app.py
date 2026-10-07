@@ -480,13 +480,14 @@ def is_cloud_ip(ip, timeout=1.5):
     """True, если IP принадлежит датацентру.
 
     Два сигнала: PTR вида ecs-*.compute.hwclouds-dns.com и ASN по Team Cymru.
-    Кэшируются только совпадения, чтобы при недоступном DNS не закрепить
-    ошибочный False навсегда."""
+    В кэш кладутся и совпадения, и точно опровергнутые адреса — иначе страница
+    статистики на сотне уникальных IP будет делать сотни DNS-запросов. Если не
+    ответили ни PTR, ни ASN, результат не запоминается и проверка повторится."""
     if not ip or ':' in ip:
         return False
     with _cloud_lock:
-        if _cloud_ip_cache.get(ip):
-            return True
+        if ip in _cloud_ip_cache:
+            return _cloud_ip_cache[ip]
     holder = {'name': ''}
 
     def _lookup():
@@ -500,14 +501,16 @@ def is_cloud_ip(ip, timeout=1.5):
     t.join(timeout)
     name = '' if t.is_alive() else holder['name']
     verdict = any(m in name for m in _CLOUD_PTR_MARKERS)
+    conclusive = bool(name)
     if not verdict:
         who = asn_of(ip, timeout=timeout)
+        conclusive = conclusive or bool(who)
         verdict = bool(who) and any(m in who.lower() for m in _ASN_CLOUD_MARKERS)
         if verdict:
             holder['name'] = who
-    if verdict:
+    if conclusive:
         with _cloud_lock:
-            _cloud_ip_cache[ip] = True
+            _cloud_ip_cache[ip] = verdict
     return verdict
 
 def mask_ip(ip):
@@ -521,6 +524,19 @@ def mask_ip(ip):
     if len(parts) != 4:
         return ''
     return f'{parts[0]}.{parts[1]}.{parts[2]}.x'
+
+def warm_cloud_cache():
+    """Прогреваем кэш «человек/датацентр» в фоне при старте сервера, чтобы
+    первый запрос статистики не ждал десятки DNS-запросов."""
+    time.sleep(3)
+    try:
+        ips = {v.get('ip', '') for v in load_visits()}
+        ips |= {b.get('ip', '') for b in load_bot_hits()}
+        for ip in ips:
+            if ip and ':' not in ip:
+                is_cloud_ip(ip, timeout=1.0)
+    except Exception:
+        pass
 
 PIXEL_GIF = base64.b64decode(
     'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
@@ -751,13 +767,17 @@ def api_stats():
     bot_hits = load_bot_hits()
     today_str = date.today().isoformat()
     real_visits = [v for v in visits if not is_internal(v.get('ip', ''))]
-    today_real = count_sessions(real_visits, since=today_str)
+    human_visits = [v for v in real_visits if not is_cloud_ip(v.get('ip', ''))]
+    cloud_visits = [v for v in real_visits if is_cloud_ip(v.get('ip', ''))]
+    today_real = count_sessions(human_visits, since=today_str)
+    today_cloud = sum(1 for v in cloud_visits if v.get('date', '').startswith(today_str))
     page_counts = Counter(v.get('page', '/') for v in visits).most_common(10)
     device_counts = Counter(v.get('device', 'unknown') for v in visits)
     real_sources = Counter(source_of(v.get('ref', '')) for v in real_visits)
     lead_sources = Counter(l.get('source') or source_of(l.get('ref', '')) for l in leads)
     lead_pages = Counter(l.get('page') or 'unknown' for l in leads)
     today_visits = [v for v in real_visits if v.get('date', '').startswith(today_str)]
+    today_human = [v for v in today_visits if not is_cloud_ip(v.get('ip', ''))]
     today_rows = [{
         'date': v['date'][:19].replace('T', ' '),
         'page': v.get('page', '/'),
@@ -768,13 +788,16 @@ def api_stats():
     } for v in reversed(today_visits)]
     return jsonify({
         'today_real': today_real,
-        'today_unique_ips': len(set(v['ip'] for v in today_visits)),
+        'today_unique_ips': len(set(v['ip'] for v in today_human)),
         'today_visits': today_rows,
-        'total_real': count_sessions(real_visits),
+        'total_real': count_sessions(human_visits),
         'total_raw': len(visits),
+        'total_cloud': len(cloud_visits),
+        'today_cloud': today_cloud,
+        'cloud_ips': len(set(v['ip'] for v in cloud_visits)),
         'today_raw': count_sessions(visits, since=today_str),
         'unique_ips': len(set(v['ip'] for v in visits)),
-        'real_ips': len(set(v['ip'] for v in real_visits)),
+        'real_ips': len(set(v['ip'] for v in human_visits)),
         'days_recorded': len(set(v['date'][:10] for v in visits)),
         'leads_count': len(leads),
         'bot_hits': len(bot_hits),
@@ -1092,14 +1115,16 @@ body {{ font-family:Arial,Helvetica,sans-serif; background:#f5f5f5; color:#222; 
 def _render_stats():
     visits = load_visits()
     real_visits = [v for v in visits if not is_internal(v.get('ip', ''))]
+    human_visits = [v for v in real_visits if not is_cloud_ip(v.get('ip', ''))]
+    cloud_visits = [v for v in real_visits if is_cloud_ip(v.get('ip', ''))]
     total = len(visits)
-    real_total = count_sessions(real_visits)
+    real_total = count_sessions(human_visits)
     today_str = date.today().isoformat()
     today_count = count_sessions(visits, since=today_str)
-    today_real = count_sessions(real_visits, since=today_str)
+    today_real = count_sessions(human_visits, since=today_str)
     unique_days = len(set(v['date'][:10] for v in visits))
     unique_ips = len(set(v['ip'] for v in visits))
-    real_ips = len(set(v['ip'] for v in real_visits))
+    real_ips = len(set(v['ip'] for v in human_visits))
     bot_hits = load_bot_hits()
     today_str_bot = date.today().isoformat()
     bot_today = sum(1 for b in bot_hits if b['date'].startswith(today_str_bot))
@@ -1209,6 +1234,7 @@ a:hover {{ text-decoration:underline; }}
     <div class="card red"><div class="num">{bot_today}</div><div class="label">Ботов сегодня</div></div>
     <div class="card red"><div class="num">{bot_ips}</div><div class="label">IP ботов</div></div>
     <div class="card red"><div class="num">{bot_cloud_today}</div><div class="label">Датацентров сегодня</div></div>
+    <div class="card red"><div class="num">{len(cloud_visits)}</div><div class="label">Датацентров всего</div></div>
     <div class="card"><div class="num">
         <a href="https://metrica.yandex.com/dashboard?id=109350815" target="_blank">&#x2197;</a>
     </div><div class="label">Яндекс.Метрика</div></div>
@@ -1234,6 +1260,7 @@ a:hover {{ text-decoration:underline; }}
 
 send_tg(f'<b>🔄 Сервер запущен</b>\n{datetime.utcnow().strftime("%d.%m.%Y %H:%M")}')
 threading.Thread(target=health_check, daemon=True).start()
+threading.Thread(target=warm_cloud_cache, daemon=True).start()
 
 
 
