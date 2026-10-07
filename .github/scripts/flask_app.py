@@ -476,12 +476,13 @@ def asn_of(ip, timeout=1.2):
     except Exception:
         return ''
 
-def is_cloud_ip(ip, timeout=1.5):
+def is_cloud_ip(ip, timeout=1.5, ptr=True):
     """True, если IP принадлежит датацентру.
 
     Два сигнала: PTR вида ecs-*.compute.hwclouds-dns.com и ASN по Team Cymru.
-    Результат кладётся в кэш: определённый однозначно — навсегда, недоступный
-    DNS — на 15 минут, чтобы не гонять сотни запросов при каждом вызове."""
+    ptr=False — пропустить обратный DNS (на хостинге он почти всегда таймаутит,
+    а ASN даёт ответ). Результат кладётся в кэш: определённый однозначно —
+    навсегда, недоступный DNS — на 15 минут."""
     if not ip or ':' in ip:
         return False
     now = time.time()
@@ -497,11 +498,14 @@ def is_cloud_ip(ip, timeout=1.5):
         except Exception:
             holder['name'] = ''
 
-    t = threading.Thread(target=_lookup, daemon=True)
-    t.start()
-    t.join(timeout)
-    name = '' if t.is_alive() else holder['name']
-    verdict = any(m in name for m in _CLOUD_PTR_MARKERS)
+    if ptr:
+        t = threading.Thread(target=_lookup, daemon=True)
+        t.start()
+        t.join(timeout)
+        name = '' if t.is_alive() else holder['name']
+    else:
+        name = ''
+    verdict = any(m in name for m in _CLOUD_PTR_MARKERS) if name else False
     conclusive = bool(name)
     if not verdict:
         who = asn_of(ip, timeout=timeout)
@@ -539,33 +543,48 @@ def mask_ip(ip):
 
 def warm_cloud_cache():
     """Фоновый прогрев кэша «человек/датацентр» при старте сервера.
-    Просит DNS в 8 потоков, чтобы уже через пару секунд статистика
-    могла отвечать только из кэша."""
+
+    Идём только по ASN (обратный DNS на хостинге таймаутит и лишь тратит
+    время) в 8 потоков. Непроверенные адреса повторяем до трёх раз, пока
+    все не станут однозначными — дальше статистике DNS уже не нужен."""
     try:
         ips = {v.get('ip', '') for v in load_visits()}
         ips |= {b.get('ip', '') for b in load_bot_hits()}
         ips = [i for i in ips if i and ':' not in i]
     except Exception:
         return
-    pending = iter(ips)
-    lock = threading.Lock()
 
-    def worker():
-        while True:
-            with lock:
-                ip = next(pending, None)
-            if ip is None:
-                return
-            try:
-                is_cloud_ip(ip, timeout=1.0)
-            except Exception:
-                pass
+    for _round in range(3):
+        pending = []
+        with _cloud_lock:
+            for ip in ips:
+                hit = _cloud_ip_cache.get(ip)
+                if hit is None or hit[1]:
+                    pending.append(ip)
+                    if hit is not None:
+                        _cloud_ip_cache.pop(ip, None)
+        if not pending:
+            return
+        queue = iter(pending)
+        qlock = threading.Lock()
 
-    workers = [threading.Thread(target=worker, daemon=True) for _ in range(8)]
-    for w in workers:
-        w.start()
-    for w in workers:
-        w.join()
+        def worker():
+            while True:
+                with qlock:
+                    ip = next(queue, None)
+                if ip is None:
+                    return
+                try:
+                    is_cloud_ip(ip, timeout=2.0, ptr=False)
+                except Exception:
+                    pass
+
+        workers = [threading.Thread(target=worker, daemon=True) for _ in range(8)]
+        for w in workers:
+            w.start()
+        for w in workers:
+            w.join()
+        time.sleep(1)
 
 PIXEL_GIF = base64.b64decode(
     'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
