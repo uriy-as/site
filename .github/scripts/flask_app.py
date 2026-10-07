@@ -480,14 +480,15 @@ def is_cloud_ip(ip, timeout=1.5):
     """True, если IP принадлежит датацентру.
 
     Два сигнала: PTR вида ecs-*.compute.hwclouds-dns.com и ASN по Team Cymru.
-    В кэш кладутся и совпадения, и точно опровергнутые адреса — иначе страница
-    статистики на сотне уникальных IP будет делать сотни DNS-запросов. Если не
-    ответили ни PTR, ни ASN, результат не запоминается и проверка повторится."""
+    Результат кладётся в кэш: определённый однозначно — навсегда, недоступный
+    DNS — на 15 минут, чтобы не гонять сотни запросов при каждом вызове."""
     if not ip or ':' in ip:
         return False
+    now = time.time()
     with _cloud_lock:
-        if ip in _cloud_ip_cache:
-            return _cloud_ip_cache[ip]
+        hit = _cloud_ip_cache.get(ip)
+        if hit is not None and (not hit[1] or hit[1] > now):
+            return hit[0]
     holder = {'name': ''}
 
     def _lookup():
@@ -508,10 +509,21 @@ def is_cloud_ip(ip, timeout=1.5):
         verdict = bool(who) and any(m in who.lower() for m in _ASN_CLOUD_MARKERS)
         if verdict:
             holder['name'] = who
-    if conclusive:
-        with _cloud_lock:
-            _cloud_ip_cache[ip] = verdict
+    with _cloud_lock:
+        _cloud_ip_cache[ip] = (verdict, 0 if conclusive else time.time() + 900)
     return verdict
+
+def is_cloud_seen(ip):
+    """Только кэш, без DNS. Статистика использует её, чтобы запрос страницы
+    никогда не ждал сеть: непроверенные IP считаются людьми, а фоновый
+    прогрев докладывает ответы позже."""
+    if not ip or ':' in ip:
+        return False
+    with _cloud_lock:
+        hit = _cloud_ip_cache.get(ip)
+        if hit is None or (hit[1] and hit[1] <= time.time()):
+            return False
+        return hit[0]
 
 def mask_ip(ip):
     """Маскируем последний октет: для отчёта хватает /24, полный адрес
@@ -526,17 +538,34 @@ def mask_ip(ip):
     return f'{parts[0]}.{parts[1]}.{parts[2]}.x'
 
 def warm_cloud_cache():
-    """Прогреваем кэш «человек/датацентр» в фоне при старте сервера, чтобы
-    первый запрос статистики не ждал десятки DNS-запросов."""
-    time.sleep(3)
+    """Фоновый прогрев кэша «человек/датацентр» при старте сервера.
+    Просит DNS в 8 потоков, чтобы уже через пару секунд статистика
+    могла отвечать только из кэша."""
     try:
         ips = {v.get('ip', '') for v in load_visits()}
         ips |= {b.get('ip', '') for b in load_bot_hits()}
-        for ip in ips:
-            if ip and ':' not in ip:
-                is_cloud_ip(ip, timeout=1.0)
+        ips = [i for i in ips if i and ':' not in i]
     except Exception:
-        pass
+        return
+    pending = iter(ips)
+    lock = threading.Lock()
+
+    def worker():
+        while True:
+            with lock:
+                ip = next(pending, None)
+            if ip is None:
+                return
+            try:
+                is_cloud_ip(ip, timeout=1.0)
+            except Exception:
+                pass
+
+    workers = [threading.Thread(target=worker, daemon=True) for _ in range(8)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
 
 PIXEL_GIF = base64.b64decode(
     'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
@@ -767,8 +796,8 @@ def api_stats():
     bot_hits = load_bot_hits()
     today_str = date.today().isoformat()
     real_visits = [v for v in visits if not is_internal(v.get('ip', ''))]
-    human_visits = [v for v in real_visits if not is_cloud_ip(v.get('ip', ''))]
-    cloud_visits = [v for v in real_visits if is_cloud_ip(v.get('ip', ''))]
+    human_visits = [v for v in real_visits if not is_cloud_seen(v.get('ip', ''))]
+    cloud_visits = [v for v in real_visits if is_cloud_seen(v.get('ip', ''))]
     today_real = count_sessions(human_visits, since=today_str)
     today_cloud = sum(1 for v in cloud_visits if v.get('date', '').startswith(today_str))
     page_counts = Counter(v.get('page', '/') for v in visits).most_common(10)
@@ -777,14 +806,14 @@ def api_stats():
     lead_sources = Counter(l.get('source') or source_of(l.get('ref', '')) for l in leads)
     lead_pages = Counter(l.get('page') or 'unknown' for l in leads)
     today_visits = [v for v in real_visits if v.get('date', '').startswith(today_str)]
-    today_human = [v for v in today_visits if not is_cloud_ip(v.get('ip', ''))]
+    today_human = [v for v in today_visits if not is_cloud_seen(v.get('ip', ''))]
     today_rows = [{
         'date': v['date'][:19].replace('T', ' '),
         'page': v.get('page', '/'),
         'device': v.get('device', ''),
         'source': source_of(v.get('ref', '')),
         'ip': mask_ip(v.get('ip', '')),
-        'cloud': is_cloud_ip(v.get('ip', '')),
+        'cloud': is_cloud_seen(v.get('ip', '')),
     } for v in reversed(today_visits)]
     return jsonify({
         'today_real': today_real,
@@ -1115,8 +1144,8 @@ body {{ font-family:Arial,Helvetica,sans-serif; background:#f5f5f5; color:#222; 
 def _render_stats():
     visits = load_visits()
     real_visits = [v for v in visits if not is_internal(v.get('ip', ''))]
-    human_visits = [v for v in real_visits if not is_cloud_ip(v.get('ip', ''))]
-    cloud_visits = [v for v in real_visits if is_cloud_ip(v.get('ip', ''))]
+    human_visits = [v for v in real_visits if not is_cloud_seen(v.get('ip', ''))]
+    cloud_visits = [v for v in real_visits if is_cloud_seen(v.get('ip', ''))]
     total = len(visits)
     real_total = count_sessions(human_visits)
     today_str = date.today().isoformat()
@@ -1141,7 +1170,7 @@ def _render_stats():
         dev = html.escape(v.get('device', ''))
         ip = html.escape(v.get('ip', ''))
         internal_tag = ' 🔒' if is_internal(v.get('ip', '')) else ''
-        cloud_tag = ' ☁️' if is_cloud_ip(v.get('ip', '')) else ''
+        cloud_tag = ' ☁️' if is_cloud_seen(v.get('ip', '')) else ''
         ua = html.escape((v.get('ua', '') or '')[:90])
         rows += f'''<tr>
             <td>{d}</td>
