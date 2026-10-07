@@ -1367,11 +1367,3 @@ body {
         border-width: 3px;
     }
 }
-
-/* ===== Защита от копирования текста статей ===== */
-.article-content {
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-}
