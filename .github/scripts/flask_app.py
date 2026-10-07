@@ -552,47 +552,56 @@ def warm_cloud_cache():
         ips = {v.get('ip', '') for v in load_visits()}
         ips |= {b.get('ip', '') for b in load_bot_hits()}
         ips = [i for i in ips if i and ':' not in i]
-    except Exception:
-        return
-
-    for _round in range(3):
-        pending = []
+    except Exception as e:
         with _cloud_lock:
-            for ip in ips:
-                hit = _cloud_ip_cache.get(ip)
-                if hit is None or hit[1]:
-                    pending.append(ip)
-                    if hit is not None:
-                        _cloud_ip_cache.pop(ip, None)
-        if not pending:
-            break
-        queue = iter(pending)
-        qlock = threading.Lock()
-
-        def worker():
-            while True:
-                with qlock:
-                    ip = next(queue, None)
-                if ip is None:
-                    return
-                try:
-                    is_cloud_ip(ip, timeout=2.0)
-                except Exception:
-                    pass
-
-        workers = [threading.Thread(target=worker, daemon=True) for _ in range(8)]
-        for w in workers:
-            w.start()
-        for w in workers:
-            w.join()
-        time.sleep(1)
-
+            cloud_warm.update(running=False, err='collect: %r' % (e,))
+        return
     with _cloud_lock:
-        vals = list(_cloud_ip_cache.values())
-        cloud_warm['checked'] = len(vals)
-        cloud_warm['conclusive'] = sum(1 for v in vals if not v[1])
-        cloud_warm['cloud'] = sum(1 for v in vals if v[0])
-        cloud_warm['running'] = False
+        cloud_warm['ips'] = len(ips)
+    try:
+        for rnd in range(3):
+            pending = []
+            with _cloud_lock:
+                for ip in ips:
+                    hit = _cloud_ip_cache.get(ip)
+                    if hit is None or hit[1]:
+                        pending.append(ip)
+                        if hit is not None:
+                            _cloud_ip_cache.pop(ip, None)
+                cloud_warm['round'] = rnd + 1
+                cloud_warm['pending'] = len(pending)
+            if not pending:
+                break
+            queue = iter(pending)
+            qlock = threading.Lock()
+
+            def worker():
+                while True:
+                    with qlock:
+                        ip = next(queue, None)
+                    if ip is None:
+                        return
+                    try:
+                        is_cloud_ip(ip, timeout=2.0)
+                    except Exception:
+                        pass
+
+            workers = [threading.Thread(target=worker, daemon=True) for _ in range(8)]
+            for w in workers:
+                w.start()
+            for w in workers:
+                w.join()
+            time.sleep(1)
+    except Exception as e:
+        with _cloud_lock:
+            cloud_warm['err'] = repr(e)
+    finally:
+        with _cloud_lock:
+            vals = list(_cloud_ip_cache.values())
+            cloud_warm['checked'] = len(vals)
+            cloud_warm['conclusive'] = sum(1 for v in vals if not v[1])
+            cloud_warm['cloud'] = sum(1 for v in vals if v[0])
+            cloud_warm['running'] = False
 
 PIXEL_GIF = base64.b64decode(
     'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
