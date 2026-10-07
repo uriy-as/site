@@ -60,6 +60,14 @@ def cors(resp):
     resp.headers['Access-Control-Allow-Origin'] = 'https://uriy-as.org'
     resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    resp.headers['X-Frame-Options'] = 'DENY'
+    resp.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    resp.headers['Content-Security-Policy'] = "frame-ancestors 'none'"
+    resp.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=(), payment=()'
+    resp.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
+    if request.path.startswith('/api/') or request.path in ('/visit', '/pixel'):
+        resp.headers['Cache-Control'] = 'no-store'
     return resp
 
 @app.route('/api/chat', methods=['OPTIONS'])
