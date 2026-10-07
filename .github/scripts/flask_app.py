@@ -6,6 +6,7 @@ import json
 import os
 import secrets
 import shutil
+import socket
 import threading
 import time
 from collections import Counter, defaultdict
@@ -311,13 +312,13 @@ def load_bot_hits():
 def save_bot_hits(hits):
     save_json(BOT_HITS_FILE, hits[-500:])
 
-def record_bot_hit(page, ua):
+def record_bot_hit(page, ua, kind='ua'):
     ip = real_ip()
     if not rate_limit(f'bothit:{ip}', 20, 3600):
         return
     hits = load_bot_hits()
     hits.append({
-        'page': page, 'ip': ip, 'ua': ua,
+        'page': page, 'ip': ip, 'ua': ua, 'kind': kind,
         'date': datetime.utcnow().isoformat()
     })
     save_bot_hits(hits)
@@ -385,6 +386,142 @@ def is_bot(ua):
         return True
     return any(m in u for m in _BOT_UA_MARKERS)
 
+# Боты на облачных прокси приходят с браузерным UA и без реферера, поэтому
+# проходят через is_bot() как живые люди. Проверяем PTR: облака всегда имеют
+# обратный DNS вида ecs-1-2-3-4.compute.hwclouds-dns.com.
+_CLOUD_PTR_MARKERS = (
+    'hwclouds', 'huaweicloud', 'huawei', 'tencent', 'tencentsz', 'alibaba',
+    'aliyuncs', 'aliyun', 'amazonaws', 'ec2-', 'googleusercontent',
+    'googlecloud', 'hetzner', 'ovh', 'digitalocean', 'linode', 'vultr',
+    'oraclecloud', 'rackspace', 'leaseweb', 'worldstream', 'datacenter',
+    'cloudbase', 'ibmcloud', 'scaleway', 'contabo', '.compute.', 'ecs-',
+)
+_cloud_ip_cache = {}
+_cloud_lock = threading.Lock()
+
+def _skip_name(data, pos):
+    """Пропуск DNS-имени: лейблы по 1+len, указатель C0 — конец имени (2 байта)."""
+    while pos < len(data):
+        n = data[pos]
+        if n == 0:
+            return pos + 1
+        if n & 0xC0 == 0xC0:
+            return pos + 2
+        pos += 1 + n
+    return pos
+
+def _dns_txt(name, server='8.8.8.8', timeout=1.2):
+    """Запрос TXT без внешних библиотек: только стандартная библиотека.
+    Возвращает список строк, при любой ошибке — пустой список."""
+    try:
+        qid = int.from_bytes(os.urandom(2), 'big')
+        labels = b''.join(bytes([len(l)]) + l.encode() for l in name.split('.')) + b'\x00'
+        query = qid.to_bytes(2, 'big') + b'\x01\x00' + b'\x00\x01\x00\x00\x00\x00\x00\x00'
+        query += labels + b'\x00\x10\x00\x01'
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(timeout)
+        try:
+            sock.sendto(query, (server, 53))
+            data, _ = sock.recvfrom(4096)
+        finally:
+            sock.close()
+        if len(data) < 12 or int.from_bytes(data[:2], 'big') != qid:
+            return []
+        pos = 12
+        for _ in range(int.from_bytes(data[4:6], 'big')):
+            pos = _skip_name(data, pos)
+            pos += 4
+        out = []
+        for _ in range(int.from_bytes(data[6:8], 'big')):
+            if pos >= len(data):
+                break
+            pos = _skip_name(data, pos)
+            if pos + 10 > len(data):
+                break
+            rtype, rclass = int.from_bytes(data[pos:pos+2], 'big'), int.from_bytes(data[pos+2:pos+4], 'big')
+            rdlen = int.from_bytes(data[pos+8:pos+10], 'big')
+            rdata = data[pos+10:pos+10+rdlen]
+            pos += 10 + rdlen
+            if rtype == 16 and rclass == 1:
+                i, chunks = 0, []
+                while i < len(rdata):
+                    n = rdata[i]
+                    chunks.append(rdata[i+1:i+1+n].decode('utf-8', 'replace'))
+                    i += 1 + n
+                out.append(''.join(chunks))
+        return out
+    except Exception:
+        return []
+
+_ASN_CLOUD_MARKERS = (
+    'huawei', 'tencent', 'alibaba', 'amazon', 'aws', 'google', 'microsoft',
+    'azure', 'oracle', 'rackspace', 'digitalocean', 'hetzner', 'ovh',
+    'vultr', 'linode', 'leaseweb', 'worldstream', 'contabo', 'ibm',
+    'datacenter', 'cloud', 'compute', 'hosting', 'server', 'vps',
+)
+
+def asn_of(ip, timeout=1.2):
+    """ASN: сначала номер и префикс, затем имя организации по номеру."""
+    if not ip or ':' in ip:
+        return ''
+    txt = _dns_txt(f'{ip}.origin.asn.cymru.com', timeout=timeout)
+    if not txt:
+        return ''
+    try:
+        asn = txt[0].split('|')[0].strip()
+        if not asn.isdigit():
+            return ''
+        who = _dns_txt(f'AS{asn}.asn.cymru.com', timeout=timeout)
+        return f'AS{asn} {who[0].split("|", 1)[1].strip()}' if who else f'AS{asn}'
+    except Exception:
+        return ''
+
+def is_cloud_ip(ip, timeout=1.5):
+    """True, если IP принадлежит датацентру.
+
+    Два сигнала: PTR вида ecs-*.compute.hwclouds-dns.com и ASN по Team Cymru.
+    Кэшируются только совпадения, чтобы при недоступном DNS не закрепить
+    ошибочный False навсегда."""
+    if not ip or ':' in ip:
+        return False
+    with _cloud_lock:
+        if _cloud_ip_cache.get(ip):
+            return True
+    holder = {'name': ''}
+
+    def _lookup():
+        try:
+            holder['name'] = socket.gethostbyaddr(ip)[0].lower()
+        except Exception:
+            holder['name'] = ''
+
+    t = threading.Thread(target=_lookup, daemon=True)
+    t.start()
+    t.join(timeout)
+    name = '' if t.is_alive() else holder['name']
+    verdict = any(m in name for m in _CLOUD_PTR_MARKERS)
+    if not verdict:
+        who = asn_of(ip, timeout=timeout)
+        verdict = bool(who) and any(m in who.lower() for m in _ASN_CLOUD_MARKERS)
+        if verdict:
+            holder['name'] = who
+    if verdict:
+        with _cloud_lock:
+            _cloud_ip_cache[ip] = True
+    return verdict
+
+def mask_ip(ip):
+    """Маскируем последний октет: для отчёта хватает /24, полный адрес
+    посетителя наружу не уходит."""
+    if not ip:
+        return ''
+    if ':' in ip:
+        return 'ipv6'
+    parts = ip.split('.')
+    if len(parts) != 4:
+        return ''
+    return f'{parts[0]}.{parts[1]}.{parts[2]}.x'
+
 PIXEL_GIF = base64.b64decode(
     'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 )
@@ -410,13 +547,17 @@ def pixel():
     screen = request.args.get('screen', '')
     ua = request.headers.get('User-Agent', '')
     dev = detect_device(ua)
+    ip = real_ip()
     if screen and is_bot(ua):
-        record_bot_hit(page, ua)
-    if screen and not is_bot(ua) and not is_internal(real_ip()) and rate_limit(f'visit:{real_ip()}', 60, 3600):
+        record_bot_hit(page, ua, kind='ua')
+    if screen and not is_bot(ua) and not is_internal(ip) and rate_limit(f'visit:{ip}', 60, 3600):
+        if is_cloud_ip(ip):
+            record_bot_hit(page, ua, kind='cloud-ip')
+            return Response(PIXEL_GIF, mimetype='image/gif')
         visits = load_visits()
         visits.append({
             'page': page, 'ref': ref, 'screen': screen, 'device': dev,
-            'ip': real_ip(), 'ua': ua,
+            'ip': ip, 'ua': ua,
             'date': datetime.utcnow().isoformat()
         })
         save_visits(visits)
@@ -443,6 +584,9 @@ def visit():
     if data.get('screen') and is_bot(ua):
         record_bot_hit(page, ua)
     if data.get('screen') and not is_bot(ua) and not is_internal(real_ip()) and rate_limit(f'visit:{real_ip()}', 60, 3600):
+        if is_cloud_ip(real_ip()):
+            record_bot_hit(page, ua, kind='cloud-ip')
+            return jsonify({'ok': True})
         visits = load_visits()
         visits.append({
             'page': page, 'ref': data.get('ref', ''), 'screen': data.get('screen', ''), 'device': dev,
@@ -613,8 +757,19 @@ def api_stats():
     real_sources = Counter(source_of(v.get('ref', '')) for v in real_visits)
     lead_sources = Counter(l.get('source') or source_of(l.get('ref', '')) for l in leads)
     lead_pages = Counter(l.get('page') or 'unknown' for l in leads)
+    today_visits = [v for v in real_visits if v.get('date', '').startswith(today_str)]
+    today_rows = [{
+        'date': v['date'][:19].replace('T', ' '),
+        'page': v.get('page', '/'),
+        'device': v.get('device', ''),
+        'source': source_of(v.get('ref', '')),
+        'ip': mask_ip(v.get('ip', '')),
+        'cloud': is_cloud_ip(v.get('ip', '')),
+    } for v in reversed(today_visits)]
     return jsonify({
         'today_real': today_real,
+        'today_unique_ips': len(set(v['ip'] for v in today_visits)),
+        'today_visits': today_rows,
         'total_real': count_sessions(real_visits),
         'total_raw': len(visits),
         'today_raw': count_sessions(visits, since=today_str),
@@ -624,6 +779,9 @@ def api_stats():
         'leads_count': len(leads),
         'bot_hits': len(bot_hits),
         'bot_hits_today': sum(1 for b in bot_hits if b['date'].startswith(today_str)),
+        'bot_hits_cloud_today': sum(
+            1 for b in bot_hits
+            if b['date'].startswith(today_str) and b.get('kind') == 'cloud-ip'),
         'bot_ips': len(set(b['ip'] for b in bot_hits)),
         'pages': [{'path': p, 'count': c} for p, c in page_counts],
         'devices': [{'type': d, 'count': c} for d, c in device_counts.items()],
@@ -946,6 +1104,8 @@ def _render_stats():
     today_str_bot = date.today().isoformat()
     bot_today = sum(1 for b in bot_hits if b['date'].startswith(today_str_bot))
     bot_ips = len(set(b['ip'] for b in bot_hits))
+    bot_cloud_today = sum(1 for b in bot_hits
+                          if b['date'].startswith(today_str_bot) and b.get('kind') == 'cloud-ip')
 
     page_counts = Counter(v.get('page', '/') for v in visits)
 
@@ -956,11 +1116,14 @@ def _render_stats():
         dev = html.escape(v.get('device', ''))
         ip = html.escape(v.get('ip', ''))
         internal_tag = ' 🔒' if is_internal(v.get('ip', '')) else ''
+        cloud_tag = ' ☁️' if is_cloud_ip(v.get('ip', '')) else ''
+        ua = html.escape((v.get('ua', '') or '')[:90])
         rows += f'''<tr>
             <td>{d}</td>
             <td>{page}</td>
             <td>{dev}</td>
-            <td>{ip}{internal_tag}</td>
+            <td>{ip}{internal_tag}{cloud_tag}</td>
+            <td>{ua}</td>
         </tr>'''
 
     page_rows = ''
@@ -1045,6 +1208,7 @@ a:hover {{ text-decoration:underline; }}
     <div class="card red"><div class="num">{len(bot_hits)}</div><div class="label">Ботов всего</div></div>
     <div class="card red"><div class="num">{bot_today}</div><div class="label">Ботов сегодня</div></div>
     <div class="card red"><div class="num">{bot_ips}</div><div class="label">IP ботов</div></div>
+    <div class="card red"><div class="num">{bot_cloud_today}</div><div class="label">Датацентров сегодня</div></div>
     <div class="card"><div class="num">
         <a href="https://metrica.yandex.com/dashboard?id=109350815" target="_blank">&#x2197;</a>
     </div><div class="label">Яндекс.Метрика</div></div>
@@ -1063,8 +1227,8 @@ a:hover {{ text-decoration:underline; }}
 <table><thead><tr><th>Дата</th><th>Страница</th><th>IP</th><th>User-Agent</th></tr></thead><tbody>{bot_rows}</tbody></table>
 
 <h2>&#x1f4c4; Последние 50 визитов</h2>
-<table><thead><tr><th>Дата</th><th>Страница</th><th>Устройство</th><th>IP</th></tr></thead><tbody>{rows}</tbody></table>
-<p style="color:#888;font-size:0.8rem;margin-top:8px">🔒 — внутренний IP (мониторинг), не учитывается в &laquo;Реальных&raquo;</p>
+<table><thead><tr><th>Дата</th><th>Страница</th><th>Устройство</th><th>IP</th><th>User-Agent</th></tr></thead><tbody>{rows}</tbody></table>
+<p style="color:#888;font-size:0.8rem;margin-top:8px">🔒 — внутренний IP (мониторинг), не учитывается в &laquo;Реальных&raquo;. ☁️ — IP из датацентра (хостинг, а не человек).</p>
 </body>
 </html>'''
 
