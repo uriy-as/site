@@ -140,13 +140,71 @@ if not verified_path:
 
 print(f'   VERIFIED at {verified_path}')
 
+# Diagnostics: web app status + error log before reloading
+print('5b. Web app diagnostics')
+try:
+    r = s.get(f'{BASE}/user/{USER}/webapps/{DOMAIN}/', timeout=30)
+    print(f'   webapp page HTTP {r.status_code}')
+    for pat in (r'Something went wrong', r'error', r'not running', r'currently running',
+                r'was not started', r'reload'):
+        m = re.search(pat, r.text, re.I)
+        if m:
+            a = max(0, m.start() - 120)
+            snippet = re.sub(r'\s+', ' ', r.text[a:m.end() + 200])[:300]
+            print(f'   [{pat}] {snippet}')
+except Exception as e:
+    print(f'   webapp page ERROR {e}')
+
+for log_path in (f'/home/{USER}/logs/{DOMAIN}.error.log',
+                 f'/home/{USER}/logs/{DOMAIN}.log',
+                 f'/home/{USER}/mysite/logs/error.log'):
+    try:
+        r = s.get(api_path(log_path),
+                  headers={'Referer': f'{BASE}/user/{USER}/webapps/',
+                           'X-CSRFToken': csrf2}, timeout=30)
+        if r.status_code == 200 and r.text.strip():
+            print(f'   LOG {log_path}:')
+            for line in r.text.splitlines()[-40:]:
+                print('     | ' + line)
+            break
+        print(f'   LOG {log_path}: HTTP {r.status_code}')
+    except Exception as e:
+        print(f'   LOG {log_path}: ERROR {e}')
+
 # Reload
 print('6. Reload web app')
 reload_url = f'{BASE}/user/{USER}/webapps/{DOMAIN}/reload'
-r = s.post(reload_url, data={'csrfmiddlewaretoken': csrf2},
-           headers={'Referer': f'{BASE}/user/{USER}/webapps/'}, timeout=30)
-print(f'   Reload: {r.status_code}')
-if r.status_code != 200:
-    print('ERROR: reload failed')
+ok = False
+for attempt in range(3):
+    try:
+        r = s.post(reload_url, data={'csrfmiddlewaretoken': csrf2},
+                   headers={'Referer': f'{BASE}/user/{USER}/webapps/'}, timeout=120)
+        print(f'   Reload try {attempt + 1}: HTTP {r.status_code}')
+        if r.status_code == 200:
+            ok = True
+            break
+    except Exception as e:
+        print(f'   Reload try {attempt + 1}: ERROR {type(e).__name__} {e}')
+    import time as _t
+    _t.sleep(20)
+
+# Health check after reload
+import time as _t
+print('7. Health check')
+healthy = False
+for i in range(12):
+    try:
+        import requests as _rq
+        hr = _rq.get(f'https://{DOMAIN}/', timeout=15)
+        print(f'   attempt {i + 1}: HTTP {hr.status_code} {hr.text[:60]!r}')
+        if hr.status_code == 200:
+            healthy = True
+            break
+    except Exception as e:
+        print(f'   attempt {i + 1}: {type(e).__name__}')
+    _t.sleep(10)
+
+if not ok or not healthy:
+    print('ERROR: reload/health check failed')
     sys.exit(1)
 print('DONE')
