@@ -423,3 +423,36 @@ if (form && modal && modalClose) {
         applyLang(newLang);
     };
 })();
+
+/* ===== Защита от копирования текста статей ===== */
+(function() {
+    var IN_ARTICLE = '.article-content';
+
+    function inSelection() {
+        var sel = window.getSelection ? window.getSelection() : null;
+        if (!sel || sel.isCollapsed || !sel.anchorNode) return false;
+        var node = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentNode;
+        return !!(node && node.closest && node.closest(IN_ARTICLE));
+    }
+
+    function inside(e) {
+        if (e.target && e.target.closest && e.target.closest(IN_ARTICLE)) return true;
+        return inSelection();
+    }
+
+    document.addEventListener('contextmenu', function(e) {
+        if (inside(e)) e.preventDefault();
+    });
+    document.addEventListener('copy', function(e) {
+        if (inside(e)) e.preventDefault();
+    });
+    document.addEventListener('cut', function(e) {
+        if (inside(e)) e.preventDefault();
+    });
+    document.addEventListener('dragstart', function(e) {
+        if (inside(e)) e.preventDefault();
+    });
+    document.addEventListener('selectstart', function(e) {
+        if (e.target && e.target.closest && e.target.closest(IN_ARTICLE)) e.preventDefault();
+    });
+})();
