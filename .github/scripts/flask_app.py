@@ -399,7 +399,7 @@ _CLOUD_PTR_MARKERS = (
 )
 _cloud_ip_cache = {}
 _cloud_lock = threading.Lock()
-cloud_warm = {'v': 4, 'checked': 0, 'conclusive': 0, 'cloud': 0, 'running': True}
+cloud_warm = {'v': 5, 'checked': 0, 'conclusive': 0, 'cloud': 0, 'running': True}
 
 def _skip_name(data, pos):
     """Пропуск DNS-имени: лейблы по 1+len, указатель C0 — конец имени (2 байта)."""
@@ -554,15 +554,14 @@ def warm_cloud_cache():
         cloud_warm['step'] = 'load'
     try:
         v_list = load_visits()
-        with _cloud_lock:
-            cloud_warm['step'] = 'load_bot_hits'
+        cloud_warm['step'] = 'load_done'
         b_list = load_bot_hits()
+        cloud_warm['step'] = 'bhits_done'
         ips = {v.get('ip', '') for v in v_list}
         ips |= {b.get('ip', '') for b in b_list}
         ips = [i for i in ips if i and ':' not in i]
-        with _cloud_lock:
-            cloud_warm['ips'] = len(ips)
-            cloud_warm['step'] = 'scan'
+        cloud_warm['ips'] = len(ips)
+        cloud_warm['step'] = 'scan'
         for rnd in range(3):
             pending = []
             with _cloud_lock:
@@ -857,6 +856,9 @@ def api_stats():
         'ip': mask_ip(v.get('ip', '')),
         'cloud': is_cloud_seen(v.get('ip', '')),
     } for v in reversed(today_visits)]
+    lock_free = _cloud_lock.acquire(timeout=0.1)
+    if lock_free:
+        _cloud_lock.release()
     return jsonify({
         'today_real': today_real,
         'today_unique_ips': len(set(v['ip'] for v in today_human)),
@@ -867,6 +869,7 @@ def api_stats():
         'today_cloud': today_cloud,
         'cloud_ips': len(set(v['ip'] for v in cloud_visits)),
         'cloud_warm': dict(cloud_warm),
+        'lock_free': lock_free,
         'today_raw': count_sessions(visits, since=today_str),
         'unique_ips': len(set(v['ip'] for v in visits)),
         'real_ips': len(set(v['ip'] for v in human_visits)),
