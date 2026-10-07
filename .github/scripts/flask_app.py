@@ -398,7 +398,7 @@ _CLOUD_PTR_MARKERS = (
 )
 _cloud_ip_cache = {}
 _cloud_lock = threading.Lock()
-cloud_warm = {'checked': 0, 'conclusive': 0, 'cloud': 0, 'running': True}
+cloud_warm = {'v': 3, 'checked': 0, 'conclusive': 0, 'cloud': 0, 'running': True}
 
 def _skip_name(data, pos):
     """Пропуск DNS-имени: лейблы по 1+len, указатель C0 — конец имени (2 байта)."""
@@ -548,6 +548,8 @@ def warm_cloud_cache():
     Идём только по ASN (обратный DNS на хостинге таймаутит и лишь тратит
     время) в 8 потоков. Непроверенные адреса повторяем до трёх раз, пока
     все не станут однозначными — дальше статистике DNS уже не нужен."""
+    with _cloud_lock:
+        cloud_warm['started'] = datetime.utcnow().strftime('%H:%M:%S')
     try:
         ips = {v.get('ip', '') for v in load_visits()}
         ips |= {b.get('ip', '') for b in load_bot_hits()}
