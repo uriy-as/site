@@ -9,6 +9,7 @@ import shutil
 import socket
 import threading
 import time
+import traceback
 from collections import Counter, defaultdict
 from datetime import datetime, date, timedelta
 from urllib.parse import urlparse
@@ -398,7 +399,7 @@ _CLOUD_PTR_MARKERS = (
 )
 _cloud_ip_cache = {}
 _cloud_lock = threading.Lock()
-cloud_warm = {'v': 3, 'checked': 0, 'conclusive': 0, 'cloud': 0, 'running': True}
+cloud_warm = {'v': 4, 'checked': 0, 'conclusive': 0, 'cloud': 0, 'running': True}
 
 def _skip_name(data, pos):
     """Пропуск DNS-имени: лейблы по 1+len, указатель C0 — конец имени (2 байта)."""
@@ -550,17 +551,18 @@ def warm_cloud_cache():
     все не станут однозначными — дальше статистике DNS уже не нужен."""
     with _cloud_lock:
         cloud_warm['started'] = datetime.utcnow().strftime('%H:%M:%S')
+        cloud_warm['step'] = 'load'
     try:
-        ips = {v.get('ip', '') for v in load_visits()}
-        ips |= {b.get('ip', '') for b in load_bot_hits()}
-        ips = [i for i in ips if i and ':' not in i]
-    except Exception as e:
+        v_list = load_visits()
         with _cloud_lock:
-            cloud_warm.update(running=False, err='collect: %r' % (e,))
-        return
-    with _cloud_lock:
-        cloud_warm['ips'] = len(ips)
-    try:
+            cloud_warm['step'] = 'load_bot_hits'
+        b_list = load_bot_hits()
+        ips = {v.get('ip', '') for v in v_list}
+        ips |= {b.get('ip', '') for b in b_list}
+        ips = [i for i in ips if i and ':' not in i]
+        with _cloud_lock:
+            cloud_warm['ips'] = len(ips)
+            cloud_warm['step'] = 'scan'
         for rnd in range(3):
             pending = []
             with _cloud_lock:
@@ -572,6 +574,7 @@ def warm_cloud_cache():
                             _cloud_ip_cache.pop(ip, None)
                 cloud_warm['round'] = rnd + 1
                 cloud_warm['pending'] = len(pending)
+                cloud_warm['step'] = 'round%d' % (rnd + 1)
             if not pending:
                 break
             queue = iter(pending)
@@ -594,9 +597,10 @@ def warm_cloud_cache():
             for w in workers:
                 w.join()
             time.sleep(1)
-    except Exception as e:
+    except BaseException as e:
         with _cloud_lock:
             cloud_warm['err'] = repr(e)
+            cloud_warm['trace'] = traceback.format_exc()[-400:]
     finally:
         with _cloud_lock:
             vals = list(_cloud_ip_cache.values())
