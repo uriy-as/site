@@ -287,6 +287,18 @@ def load_leads():
 def save_leads(leads):
     save_json(LEADS_FILE, leads[-100:])
 
+def purge_test_leads():
+    def is_test(l):
+        ip = str(l.get('ip', ''))
+        email = str(l.get('email', '')).lower()
+        return ip.startswith('10.') or ip.startswith('192.168.') or email in ('test@test.com', 't@t')
+    leads = load_leads()
+    kept = [l for l in leads if not is_test(l)]
+    removed = len(leads) - len(kept)
+    if removed:
+        save_leads(kept)
+    return removed
+
 def load_visits():
     return load_json(STATS_FILE)
 
@@ -1162,6 +1174,8 @@ def stats():
             send_tg(f'<b>🚫 Блокировка входа в статистику</b>\nIP: {real_ip()}')
         return login_form('<b style="color:#d33">Неверный пароль</b>')
     if request.args.get('key') == DIAG_KEY or request.args.get('pass') == STATS_PASSWORD:
+        if request.args.get('purge') == 'test-leads' and request.args.get('pass') == STATS_PASSWORD:
+            purge_test_leads()
         return _render_stats()
     return login_form('')
 
