@@ -58,7 +58,7 @@ def protect():
 @app.after_request
 def cors(resp):
     resp.headers['Access-Control-Allow-Origin'] = 'https://uriy-as.org'
-    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Skip-Stats'
     resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     resp.headers['X-Content-Type-Options'] = 'nosniff'
     resp.headers['X-Frame-Options'] = 'DENY'
@@ -276,6 +276,11 @@ def load_json(path):
         return []
 
 def save_json(path, data):
+    if os.path.exists(path):
+        try:
+            shutil.copyfile(path, path + '.bak')
+        except OSError:
+            pass
     tmp = path + '.tmp'
     with open(tmp, 'w') as f:
         json.dump(data, f)
@@ -297,6 +302,22 @@ def purge_test_leads():
     removed = len(leads) - len(kept)
     if removed:
         save_leads(kept)
+    return removed
+
+def purge_by_ip(prefix):
+    removed = 0
+    if not prefix:
+        return 0
+    visits = load_visits()
+    kept = [v for v in visits if not str(v.get('ip', '')).startswith(prefix)]
+    removed += len(visits) - len(kept)
+    if len(kept) != len(visits):
+        save_visits(kept)
+    hits = load_bot_hits()
+    kept_h = [h for h in hits if not str(h.get('ip', '')).startswith(prefix)]
+    removed += len(hits) - len(kept_h)
+    if len(kept_h) != len(hits):
+        save_json(BOT_HITS_FILE, kept_h[-500:])
     return removed
 
 def load_visits():
@@ -349,6 +370,15 @@ INTERNAL_IPS = {'10.0.5.156', '10.0.0.0/8'}
 def is_internal(ip):
     if ip.startswith('10.'):
         return True
+    return False
+
+def is_skipped(ip):
+    if is_internal(ip):
+        return True
+    for item in os.environ.get('SKIP_IPS', '').split(','):
+        item = item.strip()
+        if item and ip.startswith(item):
+            return True
     return False
 
 def real_ip():
@@ -683,13 +713,15 @@ def pixel():
 
 @app.route('/visit', methods=['POST'])
 def visit():
+    if request.headers.get('X-Skip-Stats') == '1':
+        return jsonify({'ok': True})
     data = request.json or {}
     ua = request.headers.get('User-Agent', '')
     dev = detect_device(ua)
     page = data.get('page', '/')
     if data.get('screen') and is_bot(ua):
         record_bot_hit(page, ua)
-    if data.get('screen') and not is_bot(ua) and not is_internal(real_ip()) and rate_limit(f'visit:{real_ip()}', 60, 3600):
+    if data.get('screen') and not is_bot(ua) and not is_skipped(real_ip()) and rate_limit(f'visit:{real_ip()}', 60, 3600):
         if is_cloud_ip(real_ip()):
             record_bot_hit(page, ua, kind='cloud-ip')
             return jsonify({'ok': True})
@@ -1174,8 +1206,12 @@ def stats():
             send_tg(f'<b>🚫 Блокировка входа в статистику</b>\nIP: {real_ip()}')
         return login_form('<b style="color:#d33">Неверный пароль</b>')
     if request.args.get('key') == DIAG_KEY or request.args.get('pass') == STATS_PASSWORD:
-        if request.args.get('purge') == 'test-leads' and request.args.get('pass') == STATS_PASSWORD:
-            purge_test_leads()
+        if request.args.get('pass') == STATS_PASSWORD:
+            purge = request.args.get('purge')
+            if purge == 'test-leads':
+                purge_test_leads()
+            elif purge == 'ip':
+                purge_by_ip(request.args.get('prefix', ''))
         return _render_stats()
     return login_form('')
 
