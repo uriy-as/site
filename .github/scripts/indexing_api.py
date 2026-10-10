@@ -31,7 +31,9 @@ def get_access_token(sa_info):
     return r.json()['access_token']
 
 def get_sitemap_urls():
-    r = requests.get(SITEMAP_URL, timeout=15)
+    r = requests.get(SITEMAP_URL,
+                     headers={'User-Agent': 'Mozilla/5.0 (compatible; uriy-as-indexer/1.0)'},
+                     timeout=15)
     r.raise_for_status()
     root = ET.fromstring(r.content)
     ns = {'sm': 'http://www.sitemaps.org/schemas/sitemap/0.9'}

@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 import html
+import ipaddress
 import json
 import os
 import secrets
@@ -528,6 +529,36 @@ def asn_of(ip, timeout=1.2):
     except Exception:
         return ''
 
+_CLOUD_CIDRS = (
+    '43.128.0.0/10',    # Tencent Cloud
+    '101.32.0.0/12',    # Tencent Cloud
+    '119.28.0.0/14',    # Tencent Cloud
+    '124.156.0.0/16',   # Tencent Cloud
+    '129.226.0.0/16',   # Tencent Cloud
+    '162.62.0.0/16',    # Tencent Cloud
+    '170.106.0.0/16',   # Tencent Cloud
+    '159.138.0.0/16',   # Huawei Cloud
+    '119.8.0.0/16',     # Huawei Cloud
+    '121.36.0.0/16',    # Huawei Cloud
+    '122.112.0.0/16',   # Huawei Cloud
+    '139.9.0.0/16',     # Huawei Cloud
+    '49.4.0.0/16',      # Huawei Cloud
+    '114.116.0.0/16',   # Huawei Cloud
+)
+_CLOUD_NETS = None
+
+def _in_cloud_cidr(ip):
+    global _CLOUD_NETS
+    if not ip or ':' in ip:
+        return False
+    if _CLOUD_NETS is None:
+        _CLOUD_NETS = [ipaddress.ip_network(c) for c in _CLOUD_CIDRS]
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in net for net in _CLOUD_NETS)
+
 def is_cloud_ip(ip, timeout=1.5, ptr=True):
     """True, если IP принадлежит датацентру.
 
@@ -537,6 +568,10 @@ def is_cloud_ip(ip, timeout=1.5, ptr=True):
     навсегда, недоступный DNS — на 15 минут."""
     if not ip or ':' in ip:
         return False
+    if _in_cloud_cidr(ip):
+        with _cloud_lock:
+            _cloud_ip_cache[ip] = (True, 0)
+        return True
     now = time.time()
     with _cloud_lock:
         hit = _cloud_ip_cache.get(ip)
@@ -575,6 +610,8 @@ def is_cloud_seen(ip):
     прогрев докладывает ответы позже."""
     if not ip or ':' in ip:
         return False
+    if _in_cloud_cidr(ip):
+        return True
     with _cloud_lock:
         hit = _cloud_ip_cache.get(ip)
         if hit is None or (hit[1] and hit[1] <= time.time()):
