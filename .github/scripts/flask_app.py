@@ -450,7 +450,7 @@ _CLOUD_PTR_MARKERS = (
 )
 _cloud_ip_cache = {}
 _cloud_lock = threading.Lock()
-cloud_warm = {'v': 5, 'checked': 0, 'conclusive': 0, 'cloud': 0, 'running': True}
+cloud_warm = {'v': 5, 'checked': 0, 'conclusive': 0, 'cloud': 0, 'running': False}
 
 def _skip_name(data, pos):
     """Пропуск DNS-имени: лейблы по 1+len, указатель C0 — конец имени (2 байта)."""
@@ -673,11 +673,12 @@ def warm_cloud_cache():
                     if ip is None:
                         return
                     try:
-                        is_cloud_ip(ip, timeout=2.0)
+                        is_cloud_ip(ip, timeout=2.0, ptr=False)
+                        time.sleep(0.02)
                     except Exception:
                         pass
 
-            workers = [threading.Thread(target=worker, daemon=True) for _ in range(8)]
+            workers = [threading.Thread(target=worker, daemon=True) for _ in range(4)]
             for w in workers:
                 w.start()
             for w in workers:
@@ -724,7 +725,7 @@ def pixel():
     if screen and is_bot(ua):
         record_bot_hit(page, ua, kind='ua')
     if screen and not is_bot(ua) and not is_internal(ip) and rate_limit(f'visit:{ip}', 60, 3600):
-        if is_cloud_ip(ip):
+        if is_cloud_ip(ip, ptr=False):
             record_bot_hit(page, ua, kind='cloud-ip')
             return Response(PIXEL_GIF, mimetype='image/gif')
         visits = load_visits()
@@ -759,7 +760,7 @@ def visit():
     if data.get('screen') and is_bot(ua):
         record_bot_hit(page, ua)
     if data.get('screen') and not is_bot(ua) and not is_skipped(real_ip()) and rate_limit(f'visit:{real_ip()}', 60, 3600):
-        if is_cloud_ip(real_ip()):
+        if is_cloud_ip(real_ip(), ptr=False):
             record_bot_hit(page, ua, kind='cloud-ip')
             return jsonify({'ok': True})
         visits = load_visits()
@@ -1428,9 +1429,15 @@ a:hover {{ text-decoration:underline; }}
 </body>
 </html>'''
 
-send_tg(f'<b>🔄 Сервер запущен</b>\n{datetime.utcnow().strftime("%d.%m.%Y %H:%M")}')
+def _boot_notify():
+    time.sleep(45)
+    try:
+        send_tg('<b>🔄 Сервер запущен</b>\n' + datetime.utcnow().strftime('%d.%m.%Y %H:%M'))
+    except Exception:
+        pass
+
 threading.Thread(target=health_check, daemon=True).start()
-threading.Thread(target=warm_cloud_cache, daemon=True).start()
+threading.Thread(target=_boot_notify, daemon=True).start()
 
 
 
