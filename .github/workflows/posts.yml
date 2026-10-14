@@ -2,7 +2,7 @@ name: Telegram Posts
 
 on:
   schedule:
-    - cron: "10 5 * * 1,3,5,6"
+    - cron: "10 5 * * 1,3,5"
   workflow_dispatch:
 
 jobs:
@@ -13,6 +13,7 @@ jobs:
       - name: Send post
         env:
           TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHANNEL_TOKEN: ${{ secrets.TELEGRAM_CHANNEL_TOKEN }}
           CHAT_ID: "@webstudio_chanel"
         run: |
           python3 << 'PYEOF'
@@ -20,25 +21,36 @@ jobs:
           with open('.github/scripts/posts.json') as f:
               posts = json.load(f)
           day = datetime.datetime.now().weekday()
-          day_offset = {0:0, 2:1, 4:2, 5:3}.get(day, 0)
+          day_offset = {0:0, 2:1, 4:2}.get(day, 0)
           week = datetime.datetime.now().isocalendar()[1]
           total = len(posts)
-          idx = (week * 4 + day_offset) % total
+          idx = (week * 3 + day_offset) % total
           post = posts[idx]
           text = post[2] if isinstance(post, list) else post
-          token = os.environ['TOKEN']
           chat_id = os.environ['CHAT_ID']
-          data = json.dumps({'chat_id': chat_id, 'parse_mode': 'HTML', 'text': text})
-          req = urllib.request.Request(
-              f'https://api.telegram.org/bot{token}/sendMessage',
-              data=data.encode(),
-              headers={'Content-Type': 'application/json'}
-          )
-          try:
-              resp = urllib.request.urlopen(req)
-              print(f'Sent post {idx}: {post[1]}')
-              print(f'Response: {resp.read().decode()}')
-          except urllib.error.HTTPError as e:
-              print(f'HTTP {e.code}: {e.read().decode()}')
-              raise
+          candidates = [
+              ('TELEGRAM_TOKEN', os.environ.get('TOKEN', '')),
+              ('TELEGRAM_CHANNEL_TOKEN', os.environ.get('CHANNEL_TOKEN', '')),
+          ]
+          data = json.dumps({'chat_id': chat_id, 'parse_mode': 'HTML', 'text': text}).encode()
+          last_err = None
+          for name, token in candidates:
+              if not token:
+                  continue
+              req = urllib.request.Request(
+                  f'https://api.telegram.org/bot{token}/sendMessage',
+                  data=data,
+                  headers={'Content-Type': 'application/json'}
+              )
+              try:
+                  resp = urllib.request.urlopen(req)
+                  print(f'Sent post {idx} via {name}: {post[1]}')
+                  print(f'Response: {resp.read().decode()}')
+                  last_err = None
+                  break
+              except urllib.error.HTTPError as e:
+                  last_err = e
+                  print(f'{name} failed: HTTP {e.code}: {e.read().decode()}')
+          if last_err is not None:
+              raise last_err
           PYEOF
