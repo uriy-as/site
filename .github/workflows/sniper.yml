@@ -1,0 +1,47 @@
+name: Freelancehunt Sniper
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sniper
+  cancel-in-progress: false
+
+jobs:
+  snipe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore state
+        run: |
+          if git ls-remote --exit-code --heads origin sniper-state >/dev/null 2>&1; then
+            git fetch origin sniper-state
+            git checkout origin/sniper-state -- fh_sniper_seen.json fh_sniper_bids.json 2>/dev/null || true
+          fi
+
+      - name: Run sniper
+        env:
+          SNIPER_TG_TOKEN: ${{ secrets.TELEGRAM_CHANNEL_TOKEN }}
+          SNIPER_TG_CHAT: "1994948658"
+        run: |
+          python3 .github/sniper/fh_sniper.py --state "$GITHUB_WORKSPACE"
+
+      - name: Save state
+        run: |
+          git config user.name "Sniper Bot"
+          git config user.email "sniper@uriy-as.org"
+          git add fh_sniper_seen.json fh_sniper_bids.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "no state change"
+          else
+            git commit -m "sniper state $(date -u +%FT%TZ)"
+            git push origin HEAD:sniper-state --force
+          fi
