@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "*/20 * * * *"
   workflow_dispatch:
+    inputs:
+      test:
+        description: "Send one test Telegram message and exit"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -15,12 +20,20 @@ concurrency:
 jobs:
   snipe:
     runs-on: ubuntu-latest
+    env:
+      SNIPER_TG_TOKEN: ${{ secrets.TELEGRAM_CHANNEL_TOKEN }}
+      SNIPER_TG_CHAT: "1994948658"
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Test message
+        if: ${{ inputs.test }}
+        run: python3 .github/sniper/fh_sniper.py --test
+
       - name: Restore state
+        if: ${{ !inputs.test }}
         run: |
           if git ls-remote --exit-code --heads origin sniper-state >/dev/null 2>&1; then
             git fetch origin sniper-state
@@ -28,13 +41,11 @@ jobs:
           fi
 
       - name: Run sniper
-        env:
-          SNIPER_TG_TOKEN: ${{ secrets.TELEGRAM_CHANNEL_TOKEN }}
-          SNIPER_TG_CHAT: "1994948658"
-        run: |
-          python3 .github/sniper/fh_sniper.py --state "$GITHUB_WORKSPACE"
+        if: ${{ !inputs.test }}
+        run: python3 .github/sniper/fh_sniper.py --state "$GITHUB_WORKSPACE"
 
       - name: Save state
+        if: ${{ !inputs.test }}
         run: |
           git config user.name "Sniper Bot"
           git config user.email "sniper@uriy-as.org"
