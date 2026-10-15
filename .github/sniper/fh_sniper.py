@@ -131,7 +131,9 @@ def tg_send(text):
     if not TG_TOKEN:
         return
     try:
-        data = json.dumps({"chat_id": TG_CHAT, "text": text, "disable_web_page_preview": True}).encode()
+        data = json.dumps({"chat_id": TG_CHAT, "text": text,
+                           "disable_web_page_preview": True,
+                           "disable_notification": False}).encode()
         req = urllib.request.Request(
             f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
             data=data, headers={"Content-Type": "application/json"}, method="POST")
@@ -170,7 +172,7 @@ def scan(record_bids=True):
         b = budget_of(it["title"], it["desc"])
         url = clean_url(it["link"])
         draft = draft_bid(it)
-        head = f"🎯 НОВЫЙ ПРОЕКТ{f' | {b}' if b else ''}\n{it['title']}\n{' / '.join(it['cats'])}\n{url}"
+        head = f"🔥🆕 СВЕЖИЙ ЗАКАЗ{f' | {b}' if b else ''}\n{it['title']}\n{' / '.join(it['cats'])}\n{url}"
         print("=" * 70)
         print(head)
         print("--- черновик ставки ---")
