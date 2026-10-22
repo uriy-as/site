@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-21T13:03:01+00:00",
+  "updated": "2026-10-22T13:04:25+00:00",
   "sources": {
     "Zharkov.dev": {
       "prices": [
@@ -52,7 +52,7 @@
           "raw": "$20"
         }
       ],
-      "checked_at": "2026-10-21T13:02:46+00:00",
+      "checked_at": "2026-10-22T13:04:10+00:00",
       "url": "https://zharkov.dev/services/telegram-bots"
     },
     "MaxWeb": {
@@ -106,47 +106,11 @@
           "raw": "5 000 ₴"
         }
       ],
-      "checked_at": "2026-10-21T13:02:51+00:00",
+      "checked_at": "2026-10-22T13:04:14+00:00",
       "url": "https://maxweb.com.ua/price"
     },
     "Web-Lift": {
       "prices": [
-        {
-          "label": "Telegram-бот",
-          "value": 180.0,
-          "currency": "USD",
-          "raw": "$ 180"
-        },
-        {
-          "label": "Telegram Web App",
-          "value": 490.0,
-          "currency": "USD",
-          "raw": "$ 490"
-        },
-        {
-          "label": "Telegram-магазин",
-          "value": 720.0,
-          "currency": "USD",
-          "raw": "$ 720"
-        },
-        {
-          "label": "Старт",
-          "value": 29.0,
-          "currency": "USD",
-          "raw": "$ 29"
-        },
-        {
-          "label": "Бізнес",
-          "value": 59.0,
-          "currency": "USD",
-          "raw": "$ 59"
-        },
-        {
-          "label": "Магазин",
-          "value": 99.0,
-          "currency": "USD",
-          "raw": "$ 99"
-        },
         {
           "label": "Лендінг + Telegram-бот",
           "value": 150.0,
@@ -160,7 +124,7 @@
           "raw": "$300"
         }
       ],
-      "checked_at": "2026-10-21T13:02:53+00:00",
+      "checked_at": "2026-10-22T13:04:17+00:00",
       "url": "https://web-lift.com/rozrobka-telegram-botiv/"
     },
     "SUDUS": {
@@ -316,7 +280,7 @@
           "raw": "50 000 грн"
         }
       ],
-      "checked_at": "2026-10-21T13:02:57+00:00",
+      "checked_at": "2026-10-22T13:04:21+00:00",
       "url": "https://sudus.team/ru/prices"
     },
     "Web24": {
@@ -340,7 +304,7 @@
           "raw": "48000 грн"
         }
       ],
-      "checked_at": "2026-10-21T13:03:01+00:00",
+      "checked_at": "2026-10-22T13:04:25+00:00",
       "url": "https://web24.com.ua/price-list/"
     },
     "PAS7 Studio": {
