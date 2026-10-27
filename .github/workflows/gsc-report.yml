@@ -2,6 +2,8 @@ name: GSC Report
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '30 6 * * *'
 
 jobs:
   report:
@@ -16,6 +18,25 @@ jobs:
         env:
           GA_KEY: ${{ secrets.GA_SERVICE_KEY }}
           GSC_SITE: sc-domain:uriy-as.org
+          GSC_OUT: gsc_out.tsv
         run: |
           python -c "import os; open('/tmp/ga-key.json','w').write(os.environ['GA_KEY'])"
           python .github/scripts/gsc_queries.py /tmp/ga-key.json
+      - name: Save snapshot
+        run: |
+          mkdir -p gsc/history
+          cp gsc_out.tsv "gsc/history/$(date -u +%Y-%m-%d).tsv"
+          cp gsc_out.tsv gsc/queries-latest.tsv
+      - name: Commit snapshot
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          git config user.name "GSC Report"
+          git config user.email "seo@uriy-as.org"
+          git add gsc/
+          if git diff --quiet --staged; then
+            echo "no changes"
+          else
+            git commit -m "gsc: query snapshot $(date -u +%F)"
+            git push
+          fi
