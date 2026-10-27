@@ -47,8 +47,8 @@ for label, start in (("90", d90), ("28", d28), ("7", d7)):
     rows.sort(key=lambda x: -x["impressions"])
     print("###QUERIES_%s###" % label)
     for x in rows:
-        print("GSCQ\t%s\t%s\t%s\t%s" % (label, x["keys"][0].replace("\t", " "),
-                                        x["impressions"], x["clicks"], round(x["position"], 1)))
+        print("GSCQ\t%s\t%s\t%s\t%s\t%s" % (label, x["keys"][0].replace("\t", " "),
+                                            x["impressions"], x["clicks"], round(x["position"], 1)))
 
 rows = q(d90, end, ["page"])
 rows.sort(key=lambda x: -x["impressions"])
