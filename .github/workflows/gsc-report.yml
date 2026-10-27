@@ -1,0 +1,21 @@
+name: GSC Report
+
+on:
+  workflow_dispatch:
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - run: pip install PyJWT requests cryptography
+      - name: Run GSC query report
+        env:
+          GA_KEY: ${{ secrets.GA_SERVICE_KEY }}
+          GSC_SITE: sc-domain:uriy-as.org
+        run: |
+          python -c "import os; open('/tmp/ga-key.json','w').write(os.environ['GA_KEY'])"
+          python .github/scripts/gsc_queries.py /tmp/ga-key.json
