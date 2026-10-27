@@ -32,6 +32,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/uriy-as/site.git"
+          git config --unset-all http.https://github.com/.extraheader || true
           git config user.name "GSC Report"
           git config user.email "seo@uriy-as.org"
           git add gsc/
@@ -39,5 +40,7 @@ jobs:
             echo "no changes"
           else
             git commit -m "gsc: query snapshot $(date -u +%F)"
+            git fetch origin main
+            git rebase origin/main
             git push
           fi
