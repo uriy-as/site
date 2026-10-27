@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""GSC: реальные поисковые запросы через Search Console API (service account из секрета GA_SERVICE_KEY)."""
+"""GSC: реальные поисковые запросы через Search Console API (service account из секрета GA_SERVICE_KEY).
+Вывод — TSV (устойчив к санитайзеру логов GitHub)."""
 import io, os, sys, json, time
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import jwt
@@ -12,65 +13,52 @@ API = "https://www.googleapis.com/webmasters/v3/sites/%s/searchAnalytics/query" 
 
 sa = json.load(open(KEY_FILE, encoding="utf-8"))
 now = int(time.time())
-payload = {
-    "iss": sa["client_email"],
-    "scope": "https://www.googleapis.com/auth/webmasters.readonly",
-    "aud": TOKEN_URL,
-    "iat": now,
-    "exp": now + 3600,
-}
-signed = jwt.encode(payload, sa["private_key"], algorithm="RS256", headers={"typ": "JWT"})
+signed = jwt.encode({"iss": sa["client_email"],
+                     "scope": "https://www.googleapis.com/auth/webmasters.readonly",
+                     "aud": TOKEN_URL, "iat": now, "exp": now + 3600},
+                    sa["private_key"], algorithm="RS256", headers={"typ": "JWT"})
 r = requests.post(TOKEN_URL, data={"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
                                     "assertion": signed}, timeout=20)
 if r.status_code != 200:
-    print("OAUTH ERROR", r.status_code, r.text[:400])
-    print("EMAIL:", sa.get("client_email"))
+    print("OAUTH_ERROR", r.status_code, r.text[:300])
+    print("SA_EMAIL", sa.get("client_email"))
     raise SystemExit(1)
 tok = r.json()["access_token"]
-print("service account:", sa.get("client_email"))
-print("site:", SITE)
+print("SITE", SITE)
+print("SA_EMAIL", sa.get("client_email"))
 
 
-def q(start, end, dims, extra=None):
+def q(start, end, dims):
     body = {"startDate": start, "endDate": end, "dimensions": dims, "rowLimit": 25000, "dataState": "all"}
-    if extra:
-        body.update(extra)
     rr = requests.post(API, json=body, headers={"Authorization": "Bearer " + tok}, timeout=60)
     if rr.status_code != 200:
-        print("API ERROR", rr.status_code, rr.text[:400])
+        print("API_ERROR", rr.status_code, rr.text[:300])
         return []
     return rr.json().get("rows", [])
 
 
 end = time.strftime("%Y-%m-%d")
-start90 = time.strftime("%Y-%m-%d", time.localtime(time.time() - 90 * 86400))
-start28 = time.strftime("%Y-%m-%d", time.localtime(time.time() - 28 * 86400))
+d90 = time.strftime("%Y-%m-%d", time.localtime(time.time() - 90 * 86400))
+d28 = time.strftime("%Y-%m-%d", time.localtime(time.time() - 28 * 86400))
+d7 = time.strftime("%Y-%m-%d", time.localtime(time.time() - 7 * 86400))
 
-print("\n=== СВОДКА (90 дней) ===")
-rows = q(start90, end, ["date"])
-print("строк по дням:", len(rows))
+for label, start in (("90", d90), ("28", d28), ("7", d7)):
+    rows = q(start, end, ["query"])
+    rows.sort(key=lambda x: -x["impressions"])
+    print("###QUERIES_%s###" % label)
+    for x in rows:
+        print("GSCQ\t%s\t%s\t%s\t%s" % (label, x["keys"][0].replace("\t", " "),
+                                        x["impressions"], x["clicks"], round(x["position"], 1)))
 
-print("\n=== ТОП-ЗАПРОСЫ (90 дней) ===")
-rows = q(start90, end, ["query"])
-rows.sort(key=lambda x: -x["clicks"])
-for x in rows[:60]:
-    print("  %-58s показы=%-6d клики=%-4d CTR=%-5.1f%% поз=%-6.1f" % (
-        x["keys"][0][:58], x["impressions"], x["clicks"], 100.0 * x["ctr"], x["position"]))
-
-print("\n=== ТОП-СТРАНИЦЫ (90 дней) ===")
-rows = q(start90, end, ["page"])
+rows = q(d90, end, ["page"])
 rows.sort(key=lambda x: -x["impressions"])
-for x in rows[:25]:
-    print("  %-70s показы=%-6d клики=%-4d поз=%.1f" % (x["keys"][0][:70], x["impressions"], x["clicks"], x["position"]))
+print("###PAGES_90###")
+for x in rows:
+    print("GSCP\t%s\t%s\t%s\t%s" % (x["keys"][0], x["impressions"], x["clicks"], round(x["position"], 1)))
 
-print("\n=== ЗАПРОСЫ ПОСЛЕДНИЕ 28 ДНЕЙ ===")
-rows = q(start28, end, ["query"])
+rows = q(d90, end, ["query", "page"])
 rows.sort(key=lambda x: -x["impressions"])
-for x in rows[:40]:
-    print("  %-58s показы=%-6d клики=%-4d поз=%-6.1f" % (x["keys"][0][:58], x["impressions"], x["clicks"], x["position"]))
-
-print("\n=== JSON (для разбора) ===")
-out = {"site": SITE, "start": start90, "end": end,
-       "queries": q(start90, end, ["query"]), "pages": q(start90, end, ["page"]),
-       "queries28": q(start28, end, ["query"])}
-print("__JSON__" + json.dumps(out, ensure_ascii=False))
+print("###QPAGE_90###")
+for x in rows:
+    print("GSCQP\t%s\t%s\t%s\t%s\t%s" % (x["keys"][0], x["keys"][1], x["impressions"], x["clicks"], round(x["position"], 1)))
+print("###DONE###")
