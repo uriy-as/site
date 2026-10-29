@@ -297,13 +297,25 @@ def purge_test_leads():
     def is_test(l):
         ip = str(l.get('ip', ''))
         email = str(l.get('email', '')).lower()
-        return ip.startswith('10.') or ip.startswith('192.168.') or email in ('test@test.com', 't@t')
+        msg = str(l.get('message', '')).lower()
+        name = str(l.get('name', '')).lower()
+        if ip.startswith('10.') or ip.startswith('192.168.') or email in ('test@test.com', 't@t'):
+            return True
+        if 'тест' in msg or 'тест' in name or 'p0' in msg or 'p0' in name:
+            return True
+        return False
     leads = load_leads()
     kept = [l for l in leads if not is_test(l)]
     removed = len(leads) - len(kept)
     if removed:
         save_leads(kept)
     return removed
+
+
+@app.route('/api/purge-test', methods=['GET', 'POST'])
+def api_purge_test():
+    removed = purge_test_leads()
+    return jsonify({'ok': True, 'removed': removed})
 
 
 def purge_lead(idx=None, marker=None):
