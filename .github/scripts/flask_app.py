@@ -305,6 +305,27 @@ def purge_test_leads():
         save_leads(kept)
     return removed
 
+
+def purge_lead(idx=None, marker=None):
+    leads = load_leads()
+    if idx is not None:
+        try:
+            idx = int(idx)
+        except (ValueError, TypeError):
+            return 0, None
+        if 0 <= idx < len(leads):
+            removed_lead = leads.pop(idx)
+            save_leads(leads)
+            return 1, removed_lead
+        return 0, None
+    if marker:
+        kept = [l for l in leads if marker not in str(l)]
+        removed = len(leads) - len(kept)
+        if removed:
+            save_leads(kept)
+        return removed, None
+    return 0, None
+
 def purge_by_ip(prefix):
     removed = 0
     if not prefix:
@@ -450,7 +471,7 @@ _CLOUD_PTR_MARKERS = (
 )
 _cloud_ip_cache = {}
 _cloud_lock = threading.Lock()
-cloud_warm = {'v': 5, 'checked': 0, 'conclusive': 0, 'cloud': 0, 'running': False}
+cloud_warm = {'v': 5, 'checked': 0, 'conclusive': 0, 'cloud': 0, 'running': True}
 
 def _skip_name(data, pos):
     """Пропуск DNS-имени: лейблы по 1+len, указатель C0 — конец имени (2 байта)."""
@@ -673,12 +694,11 @@ def warm_cloud_cache():
                     if ip is None:
                         return
                     try:
-                        is_cloud_ip(ip, timeout=2.0, ptr=False)
-                        time.sleep(0.02)
+                        is_cloud_ip(ip, timeout=2.0)
                     except Exception:
                         pass
 
-            workers = [threading.Thread(target=worker, daemon=True) for _ in range(4)]
+            workers = [threading.Thread(target=worker, daemon=True) for _ in range(8)]
             for w in workers:
                 w.start()
             for w in workers:
@@ -725,7 +745,7 @@ def pixel():
     if screen and is_bot(ua):
         record_bot_hit(page, ua, kind='ua')
     if screen and not is_bot(ua) and not is_internal(ip) and rate_limit(f'visit:{ip}', 60, 3600):
-        if is_cloud_ip(ip, ptr=False):
+        if is_cloud_ip(ip):
             record_bot_hit(page, ua, kind='cloud-ip')
             return Response(PIXEL_GIF, mimetype='image/gif')
         visits = load_visits()
@@ -760,7 +780,7 @@ def visit():
     if data.get('screen') and is_bot(ua):
         record_bot_hit(page, ua)
     if data.get('screen') and not is_bot(ua) and not is_skipped(real_ip()) and rate_limit(f'visit:{real_ip()}', 60, 3600):
-        if is_cloud_ip(real_ip(), ptr=False):
+        if is_cloud_ip(real_ip()):
             record_bot_hit(page, ua, kind='cloud-ip')
             return jsonify({'ok': True})
         visits = load_visits()
@@ -1250,6 +1270,11 @@ def stats():
                 purge_test_leads()
             elif purge == 'ip':
                 purge_by_ip(request.args.get('prefix', ''))
+            elif purge == 'lead':
+                idx = request.args.get('idx')
+                marker = request.args.get('marker')
+                removed, info = purge_lead(idx=idx, marker=marker)
+                return _render_stats(extra='Удалено лидов: %d' % removed + (' (%s)' % info if info else ''))
         return _render_stats()
     return login_form('')
 
@@ -1283,7 +1308,7 @@ body {{ font-family:Arial,Helvetica,sans-serif; background:#f5f5f5; color:#222; 
 </body>
 </html>'''
 
-def _render_stats():
+def _render_stats(extra=''):
     visits = load_visits()
     real_visits = [v for v in visits if not is_internal(v.get('ip', ''))]
     human_visits = [v for v in real_visits if not is_cloud_seen(v.get('ip', ''))]
@@ -1331,6 +1356,8 @@ def _render_stats():
         device_rows += f'<tr><td>{html.escape(d)}</td><td>{c}</td></tr>'
 
     lead_rows = ''
+    if extra:
+        parts.append('<p style="color:green;font-weight:bold">%s</p>' % extra)
     for lead in reversed(load_leads()[-20:]):
         d = lead['date'][:19].replace('T', ' ')
         name = lead.get('name', '')
@@ -1429,15 +1456,9 @@ a:hover {{ text-decoration:underline; }}
 </body>
 </html>'''
 
-def _boot_notify():
-    time.sleep(45)
-    try:
-        send_tg('<b>🔄 Сервер запущен</b>\n' + datetime.utcnow().strftime('%d.%m.%Y %H:%M'))
-    except Exception:
-        pass
-
+send_tg(f'<b>🔄 Сервер запущен</b>\n{datetime.utcnow().strftime("%d.%m.%Y %H:%M")}')
 threading.Thread(target=health_check, daemon=True).start()
-threading.Thread(target=_boot_notify, daemon=True).start()
+threading.Thread(target=warm_cloud_cache, daemon=True).start()
 
 
 
