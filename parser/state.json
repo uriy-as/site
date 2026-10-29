@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-28T14:13:09+00:00",
+  "updated": "2026-10-29T14:33:04+00:00",
   "sources": {
     "Zharkov.dev": {
       "prices": [
@@ -52,7 +52,7 @@
           "raw": "$20"
         }
       ],
-      "checked_at": "2026-10-28T14:12:54+00:00",
+      "checked_at": "2026-10-29T14:32:49+00:00",
       "url": "https://zharkov.dev/services/telegram-bots"
     },
     "MaxWeb": {
@@ -106,7 +106,7 @@
           "raw": "5 000 ₴"
         }
       ],
-      "checked_at": "2026-10-28T14:12:58+00:00",
+      "checked_at": "2026-10-29T14:32:53+00:00",
       "url": "https://maxweb.com.ua/price"
     },
     "Web-Lift": {
@@ -124,7 +124,7 @@
           "raw": "$300"
         }
       ],
-      "checked_at": "2026-10-28T14:13:01+00:00",
+      "checked_at": "2026-10-29T14:32:56+00:00",
       "url": "https://web-lift.com/rozrobka-telegram-botiv/"
     },
     "SUDUS": {
@@ -280,7 +280,7 @@
           "raw": "50 000 грн"
         }
       ],
-      "checked_at": "2026-10-28T14:13:05+00:00",
+      "checked_at": "2026-10-29T14:33:00+00:00",
       "url": "https://sudus.team/ru/prices"
     },
     "Web24": {
@@ -304,7 +304,7 @@
           "raw": "48000 грн"
         }
       ],
-      "checked_at": "2026-10-28T14:13:09+00:00",
+      "checked_at": "2026-10-29T14:33:04+00:00",
       "url": "https://web24.com.ua/price-list/"
     },
     "PAS7 Studio": {
