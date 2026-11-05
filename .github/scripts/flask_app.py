@@ -8,6 +8,7 @@ import os
 import secrets
 import shutil
 import socket
+import sys
 import threading
 import time
 import traceback
@@ -107,8 +108,17 @@ def _load_pa_token():
 PA_API_TOKEN = _load_pa_token()
 PA_USER = 'Astap'
 PA_BASE = f'https://www.pythonanywhere.com/api/v0/user/{PA_USER}'
-COHERE_MODEL = 'command-r-08-2024'
-COHERE_BACKUP_MODEL = 'command-r'
+COHERE_MODEL = 'command-a-03-2025'
+COHERE_BACKUP_MODEL = 'command-r7b-12-2024'
+# Актуальные модели Cohere. Alias command-r (command-r-03-2024) удалён 15.09.2025.
+# Рабочие сейчас: command-a-03-2025 (v2 API), command-r7b-12-2024 и
+# command-r-plus-08-2024 (v1 API). Старый command-r-08-2024 оставлен последним.
+COHERE_MODELS = [
+    ('command-a-03-2025', 'v2'),
+    ('command-r7b-12-2024', 'v1'),
+    ('command-r-plus-08-2024', 'v1'),
+    ('command-r-08-2024', 'v1'),
+]
 _last_notify = 0.0
 
 DIAG_KEY_FILE = '/home/Astap/mysite/.diag_key'
@@ -154,15 +164,19 @@ def health_check():
     while True:
         time.sleep(3600)
         ok = False
-        model = COHERE_MODEL
+        last_err = ''
         try:
-            r = requests.post('https://api.cohere.com/v1/chat',
-                json={'message': 'Say hello in Russian', 'model': model},
-                headers={'Authorization': f'Bearer {COHERE_API_KEY}'}, timeout=15)
-            ok = r.status_code == 200
-        except:
-            pass
+            txt, model, last_err = _cohere_ask('Say hello in Russian')
+            ok = bool(txt)
+        except Exception as e:
+            ok = False
+            last_err = str(e)[:200]
         if ok:
+            try:
+                this = sys.modules[__name__]
+                this.COHERE_MODEL = model
+            except Exception:
+                pass
             continue
 
         send_tg('<b>⚠️ Cohere API error</b>\nПробую перезагрузку webapp...')
@@ -171,35 +185,45 @@ def health_check():
                 headers={'Authorization': f'Token {PA_API_TOKEN}'}, timeout=30)
             time.sleep(5)
             try:
-                r = requests.post('https://api.cohere.com/v1/chat',
-                    json={'message': 'Say hello in Russian', 'model': model},
-                    headers={'Authorization': f'Bearer {COHERE_API_KEY}'}, timeout=15)
-                ok = r.status_code == 200
-            except:
-                pass
+                txt, model, last_err = _cohere_ask('Say hello in Russian')
+                ok = bool(txt)
+            except Exception as e:
+                ok = False
+                last_err = str(e)[:200]
         except:
             pass
         if ok:
             send_tg('<b>✅ Восстановлено</b>\nПерезагрузка webapp помогла.')
             continue
 
-        send_tg('<b>⚠️ Cohere API error</b>\nПробую резервную модель command-r...')
+        send_tg('<b>⚠️ Cohere API error</b>\nПеребираю модели: ' + ', '.join(m for m, _ in COHERE_MODELS))
         try:
-            r = requests.post('https://api.cohere.com/v1/chat',
-                json={'message': 'Say hello in Russian', 'model': COHERE_BACKUP_MODEL},
-                headers={'Authorization': f'Bearer {COHERE_API_KEY}'}, timeout=15)
-            ok = r.status_code == 200
+            txt, model, last_err = _cohere_ask('Say hello in Russian')
+            ok = bool(txt)
             if ok:
                 import sys
                 this = sys.modules[__name__]
-                this.COHERE_MODEL = COHERE_BACKUP_MODEL
-                send_tg('<b>✅ Восстановлено</b>\nРезервная модель command-r активна.')
-        except:
-            pass
+                this.COHERE_MODEL = model
+                send_tg(f'<b>✅ Восстановлено</b>\nАктивна модель {model}.')
+        except Exception as e:
+            ok = False
+            last_err = str(e)[:200]
         if ok:
             continue
 
-        send_tg('<b>🚨 Нужен человек</b>\nCohere API не работает. Ребут + смена модели не помогли.')
+        send_tg('<b>🚨 Нужен человек</b>\nCohere API не работает. Ребут + смена модели не помогли.\n'
+                f'<code>{(last_err or "нет деталей")[:400]}</code>')
+
+_cohere_err_log = []
+
+
+def log_cohere_error(err):
+    """Кольцевой буфер последних ошибок Cohere (печатается в error log)."""
+    global _cohere_err_log
+    _cohere_err_log.append(time.strftime('%Y-%m-%d %H:%M:%S ') + err)
+    del _cohere_err_log[:-10]
+    print('COHERE ERROR: ' + err, flush=True)
+
 
 def send_tg(text):
     if not TELEGRAM_TOKEN:
@@ -1044,36 +1068,70 @@ def diag():
 
 
 
+def _cohere_call(model, api, prompt):
+    """Один вызов Cohere. api='v1' -> /v1/chat (message), api='v2' -> /v2/chat (messages)."""
+    if api == 'v2':
+        url = 'https://api.cohere.com/v2/chat'
+        body = {'model': model, 'messages': [{'role': 'user', 'content': prompt}], 'temperature': 0.3}
+    else:
+        url = 'https://api.cohere.com/v1/chat'
+        body = {'model': model, 'message': prompt, 'temperature': 0.3}
+    r = requests.post(url, json=body,
+                      headers={'Authorization': f'Bearer {COHERE_API_KEY}'}, timeout=30)
+    if r.status_code != 200:
+        raise RuntimeError(f'HTTP {r.status_code}: {r.text[:200]}')
+    data = r.json()
+    if api == 'v2':
+        content = (data.get('message') or {}).get('content') or []
+        for part in content:
+            if isinstance(part, dict) and part.get('text'):
+                return part['text']
+        return None
+    return data.get('text') or None
+
+
+def _cohere_ask(prompt):
+    """Перебирает модели/эндпоинты. Возвращает (текст, модель, ошибка)."""
+    last_err = ''
+    models = list(COHERE_MODELS)
+    for i, (m, a) in enumerate(models):
+        if m == COHERE_MODEL:
+            models.insert(0, models.pop(i))
+            break
+    for model, api in models:
+        try:
+            txt = _cohere_call(model, api, prompt)
+            if txt:
+                return txt, model, ''
+        except Exception as e:
+            last_err = f'{model}/{api}: {str(e)[:200]}'
+    return None, '', last_err
+
+
 def ask_cohere(text):
-    try:
-        r = requests.post(
-            'https://api.cohere.com/v1/chat',
-            json={'message': f'{SYSTEM_PROMPT}\n\nВопрос клиента: {text}', 'model': COHERE_MODEL, 'temperature': 0.3},
-            headers={'Authorization': f'Bearer {COHERE_API_KEY}'},
-            timeout=30
-        )
-        if r.status_code == 200:
-            data = r.json()
-            if data.get('text'):
-                return data['text']
-    except:
-        pass
+    global COHERE_MODEL
+    txt, model, err = _cohere_ask(f'{SYSTEM_PROMPT}\n\nВопрос клиента: {text}')
+    if txt and model:
+        COHERE_MODEL = model
+        return txt
+    if err:
+        try:
+            log_cohere_error(err)
+        except Exception:
+            pass
     return None
 
 def ask_cohere_en(text):
-    try:
-        r = requests.post(
-            'https://api.cohere.com/v1/chat',
-            json={'message': f'{SYSTEM_PROMPT_EN}\n\nClient question: {text}', 'model': COHERE_MODEL, 'temperature': 0.3},
-            headers={'Authorization': f'Bearer {COHERE_API_KEY}'},
-            timeout=30
-        )
-        if r.status_code == 200:
-            data = r.json()
-            if data.get('text'):
-                return data['text']
-    except:
-        pass
+    global COHERE_MODEL
+    txt, model, err = _cohere_ask(f'{SYSTEM_PROMPT_EN}\n\nClient question: {text}')
+    if txt and model:
+        COHERE_MODEL = model
+        return txt
+    if err:
+        try:
+            log_cohere_error(err)
+        except Exception:
+            pass
     return None
 
 def ask_hf(text):
@@ -1088,32 +1146,40 @@ def ask_hf(text):
         'google/flan-t5-large',
         'HuggingFaceH4/zephyr-7b-beta',
     ]
+    # Старый хост api-inference.huggingface.co отключён -> router.huggingface.co
+    hosts = [
+        'https://router.huggingface.co/hf-inference/models/',
+        'https://router.huggingface.co/models/',
+        'https://api-inference.huggingface.co/models/',
+    ]
     for model in models:
-        try:
-            payload = {
-                'inputs': prompt,
-                'parameters': {'max_new_tokens': 500, 'temperature': 0.7, 'return_full_text': False},
-            }
-            r = requests.post(
-                f'https://api-inference.huggingface.co/models/{model}',
-                json=payload,
-                headers=headers,
-                timeout=15
-            )
-            if r.status_code == 200:
-                data = r.json()
-                if isinstance(data, list) and data:
-                    gen = data[0].get('generated_text', '')
-                elif isinstance(data, dict):
-                    gen = data.get('generated_text', '')
-                else:
-                    gen = ''
-                if gen:
-                    return gen.strip()[:600]
-            elif r.status_code == 503:
+        payload = {
+            'inputs': prompt,
+            'parameters': {'max_new_tokens': 500, 'temperature': 0.7, 'return_full_text': False},
+        }
+        for host in hosts:
+            try:
+                r = requests.post(
+                    f'{host}{model}',
+                    json=payload,
+                    headers=headers,
+                    timeout=15
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    if isinstance(data, list) and data:
+                        gen = data[0].get('generated_text', '')
+                    elif isinstance(data, dict):
+                        gen = data.get('generated_text', '')
+                    else:
+                        gen = ''
+                    if gen:
+                        return gen.strip()[:600]
+                if r.status_code in (404, 503):
+                    continue
+                break
+            except Exception:
                 continue
-        except:
-            continue
     return None
 
 def ask_ai(text, lang='ru'):
