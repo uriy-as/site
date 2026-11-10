@@ -1257,6 +1257,174 @@ def delete_webhook():
     r = requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook')
     return jsonify(r.json())
 
+TG_POSTS_URL = 'https://raw.githubusercontent.com/uriy-as/site/main/.github/scripts/posts.json'
+TG_POSTS_STATE_URL = 'https://raw.githubusercontent.com/uriy-as/site/main/.github/scripts/posts_state.json'
+TG_POSTS_CACHE = '/home/Astap/mysite/posts.json'
+TG_POST_STATE_FILE = '/home/Astap/mysite/tg_posts_state.json'
+TG_CHANNEL = os.environ.get('TG_CHANNEL', '@webstudio_chanel')
+TG_POST_ALLOWED_WEEKDAYS = {0, 2, 4}  # 0=Пн, 2=Ср, 4=Пт
+
+try:
+    from zoneinfo import ZoneInfo
+    KYIV_TZ = ZoneInfo('Europe/Kyiv')
+except Exception:
+    KYIV_TZ = None
+
+
+def _tg_post_now():
+    """Текущее время в Киеве — для проверки дня недели."""
+    if KYIV_TZ is not None:
+        try:
+            return datetime.now(KYIV_TZ)
+        except Exception:
+            pass
+    return datetime.utcnow()
+
+
+def _tg_post_hash(text):
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
+
+
+def _load_tg_posts():
+    """Посты из posts.json: свежая копия из репозитория, иначе кэш на сервере."""
+    try:
+        r = requests.get(TG_POSTS_URL, timeout=15)
+        if r.status_code == 200:
+            posts = r.json()
+            if isinstance(posts, list) and posts:
+                save_json(TG_POSTS_CACHE, posts)
+                return posts
+    except Exception:
+        pass
+    return load_json(TG_POSTS_CACHE)
+
+
+def _seed_tg_post_state(posts):
+    """Первый запуск: переносим состояние старого posts.yml.
+
+    Старый workflow отправлял посты последовательно (week*3 + day_offset),
+    поэтому last_sent_idx — индекс последнего отправленного поста. Отмечаем
+    использованными все посты до него, чтобы новый эндпоинт продолжил с
+    следующего и не отправил дубль.
+    """
+    try:
+        r = requests.get(TG_POSTS_STATE_URL, timeout=15)
+        if r.status_code == 200:
+            last = int(r.json().get('last_sent_idx', -1))
+            if 0 <= last < len(posts):
+                used = []
+                for p in posts[:last + 1]:
+                    text = p[2] if isinstance(p, list) else p
+                    used.append(_tg_post_hash(text))
+                return {'used': used, 'cycle': 1, 'last_date': '',
+                        'last_title': '', 'last_post_id': '',
+                        'seeded_from': f'posts_state.json:{last}'}
+    except Exception:
+        pass
+    return {'used': [], 'cycle': 1}
+
+
+def _load_tg_post_state(posts):
+    try:
+        with open(TG_POST_STATE_FILE) as f:
+            st = json.load(f)
+        if isinstance(st, dict):
+            st.setdefault('used', [])
+            st.setdefault('cycle', 1)
+            return st
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    st = _seed_tg_post_state(posts)
+    _save_tg_post_state(st)
+    return st
+
+
+def _save_tg_post_state(st):
+    save_json(TG_POST_STATE_FILE, st)
+
+
+@app.route('/api/tg-post', methods=['GET', 'POST'])
+def api_tg_post():
+    """Отправка поста из posts.json в @webstudio_chanel.
+
+    Только Пн/Ср/Пт, один пост в день, без повторов в текущем цикле.
+    Ключ: ?key=DIAG_KEY (или переменная окружения TG_POST_KEY).
+    Отладка: ?dry=1 — показать пост без отправки, ?force=1 — игнорировать день и дубль.
+    """
+    if request.args.get('key') != (os.environ.get('TG_POST_KEY', '') or DIAG_KEY):
+        abort(403)
+    now = _tg_post_now()
+    today = now.strftime('%Y-%m-%d')
+    force = request.args.get('force') == '1'
+    dry = request.args.get('dry') == '1'
+    if not force and now.weekday() not in TG_POST_ALLOWED_WEEKDAYS:
+        return jsonify({'ok': False, 'skipped': 'day', 'date': today,
+                        'weekday': now.weekday(),
+                        'allowed_weekdays': sorted(TG_POST_ALLOWED_WEEKDAYS)})
+    posts = _load_tg_posts()
+    if not posts:
+        return jsonify({'ok': False, 'error': 'posts.json недоступен или пуст'}), 503
+    st = _load_tg_post_state(posts)
+    if not force and st.get('last_date') == today:
+        return jsonify({'ok': False, 'skipped': 'already_today', 'date': today,
+                        'last_title': st.get('last_title', '')})
+    used = set(st.get('used', []))
+    pick = None
+    for p in posts:
+        text = p[2] if isinstance(p, list) else p
+        if _tg_post_hash(text) not in used:
+            pick = p
+            break
+    cycle = int(st.get('cycle', 1))
+    if pick is None:
+        # Все посты уже отправлены — начинаем новый цикл с начала.
+        cycle += 1
+        st['used'] = []
+        used = set()
+        pick = posts[0]
+        send_tg(f'<b>🔁 Все посты отправлены</b>\nНачинаем цикл №{cycle}.')
+    text = pick[2] if isinstance(pick, list) else pick
+    title = pick[1] if isinstance(pick, list) and len(pick) > 1 else ''
+    post_id = pick[0] if isinstance(pick, list) and len(pick) > 0 else ''
+    if dry:
+        return jsonify({'ok': True, 'dry': True, 'date': today, 'cycle': cycle,
+                        'post_id': post_id, 'title': title,
+                        'used': len(used), 'total': len(posts),
+                        'text_preview': text[:200]})
+    tokens = [t for t in (TELEGRAM_TOKEN, os.environ.get('TG_CHANNEL_TOKEN', '')) if t]
+    if not tokens:
+        return jsonify({'ok': False, 'error': 'TG_BOT_TOKEN не задан'}), 503
+    last_err = ''
+    sent = False
+    for token in tokens:
+        try:
+            r = requests.post(
+                f'https://api.telegram.org/bot{token}/sendMessage',
+                json={'chat_id': TG_CHANNEL, 'text': text, 'parse_mode': 'HTML'},
+                timeout=20)
+            tg_data = r.json()
+            if tg_data.get('ok'):
+                sent = True
+                break
+            last_err = str(tg_data.get('description') or tg_data)[:300]
+        except Exception as e:
+            last_err = str(e)[:300]
+    if not sent:
+        send_tg(f'<b>❌ Не удалось отправить пост</b>\n{html.escape(title)}\n{html.escape(last_err)}')
+        return jsonify({'ok': False, 'error': last_err}), 502
+    st.setdefault('used', []).append(_tg_post_hash(text))
+    st['cycle'] = cycle
+    st['last_date'] = today
+    st['last_title'] = title
+    st['last_post_id'] = post_id
+    st['last_ts'] = now.strftime('%Y-%m-%d %H:%M:%S')
+    _save_tg_post_state(st)
+    send_tg(f'<b>📢 Пост в {TG_CHANNEL}</b>\n{html.escape(title)}\n'
+            f'<a href="https://astap.pythonanywhere.com/stats?key={DIAG_KEY}">📊 Статистика</a>')
+    return jsonify({'ok': True, 'date': today, 'cycle': cycle,
+                    'post_id': post_id, 'title': title,
+                    'used': len(st['used']), 'total': len(posts)})
+
 GA_PROPERTY_ID = '542628161'
 
 GA_KEY_FILE = '/home/Astap/mysite/ga-key.json'
