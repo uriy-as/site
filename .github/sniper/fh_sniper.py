@@ -101,6 +101,16 @@ def fetch(url):
     return urllib.request.urlopen(req, timeout=40).read().decode("utf-8", "replace")
 
 
+def fetch_bids(url):
+    """Число ставок на проект (конкуренция). Пусто, если страница недоступна."""
+    try:
+        html = fetch(url)
+        m = re.search(r'Ставки[\s\S]{0,300}?(\d+)', html)
+        return m.group(1) if m else ''
+    except Exception:
+        return ''
+
+
 def parse_rss(text):
     root = ET.fromstring(text)
     ch = root.find("channel")
@@ -202,7 +212,10 @@ def scan(record_bids=True):
         b = budget_of(it["title"], it["desc"])
         url = clean_url(it["link"])
         draft = draft_bid(it)
-        head = f"🔥🆕 СВЕЖИЙ ЗАКАЗ{f' | {b}' if b else ''}\n{it['title']}\n{' / '.join(it['cats'])}\n{url}"
+        bids_n = fetch_bids(url)
+        comp = f" | ставок: {bids_n}" if bids_n else ""
+        low = " ✅" if bids_n.isdigit() and int(bids_n) <= 15 else ""
+        head = f"🔥🆕 СВЕЖИЙ ЗАКАЗ{f' | {b}' if b else ''}{comp}{low}\n{it['title']}\n{' / '.join(it['cats'])}\n{url}"
         print("=" * 70)
         print(head)
         print("--- черновик ставки ---")
