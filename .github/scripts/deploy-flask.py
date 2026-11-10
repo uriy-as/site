@@ -12,6 +12,7 @@ USER = os.environ.get('PA_USERNAME', '').strip()
 PASSWORD = os.environ.get('PA_PASSWORD', '').strip()
 DOMAIN = os.environ.get('PA_DOMAIN', '').strip() or f'{USER}.pythonanywhere.com'
 SOURCE_FILE = os.environ.get('FLASK_FILE', '.github/scripts/flask_app.py')
+TG_CHANNEL_TOKEN = os.environ.get('TG_CHANNEL_TOKEN', '')
 
 if not USER or not PASSWORD:
     print('ERROR: PA_USERNAME and PA_PASSWORD env vars are required')
@@ -117,6 +118,27 @@ def verify(remote_path):
     return False, f'hash differs (remote {remote_hash[:12]}, local {file_hash[:12]})'
 
 
+def upload_bytes(remote_path, name, data):
+    return s.post(api_path(remote_path), files={'content': (name, data)},
+                  headers={'Referer': f'{BASE}/user/{USER}/webapps/',
+                           'X-CSRFToken': csrf2},
+                  timeout=30)
+
+
+def verify_bytes(remote_path, data):
+    r = s.get(api_path(remote_path),
+              headers={'Referer': f'{BASE}/user/{USER}/webapps/',
+                       'X-CSRFToken': csrf2},
+              timeout=30)
+    if r.status_code != 200:
+        return False, f'HTTP {r.status_code}'
+    remote_hash = hashlib.sha256(r.content).hexdigest()
+    local_hash = hashlib.sha256(data.encode('utf-8')).hexdigest()
+    if remote_hash == local_hash:
+        return True, 'hash matches'
+    return False, f'hash differs (remote {remote_hash[:12]}, local {local_hash[:12]})'
+
+
 verified_path = None
 for remote_path in candidates:
     try:
@@ -139,6 +161,21 @@ if not verified_path:
     sys.exit(1)
 
 print(f'   VERIFIED at {verified_path}')
+
+# Резервный токен канала (старый бот) — для /api/tg-post.
+if TG_CHANNEL_TOKEN:
+    print('5a. Upload channel token file')
+    token_path = f'/home/{USER}/mysite/.tg_channel_token'
+    try:
+        r = upload_bytes(token_path, '.tg_channel_token', TG_CHANNEL_TOKEN)
+        print(f'   {token_path}: upload HTTP {r.status_code}')
+        if r.status_code in (200, 201):
+            ok, detail = verify_bytes(token_path, TG_CHANNEL_TOKEN)
+            print(f'      verify: {"OK - " if ok else "FAILED - "}{detail}')
+    except Exception as e:
+        print(f'   {token_path}: ERROR {e}')
+else:
+    print('5a. TG_CHANNEL_TOKEN not set - skip channel token file')
 
 # Diagnostics: web app status + error log before reloading
 print('5b. Web app diagnostics')

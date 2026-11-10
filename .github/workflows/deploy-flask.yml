@@ -18,3 +18,4 @@ jobs:
           PA_PASSWORD: ${{ secrets.PA_PASSWORD }}
           PA_DOMAIN: Astap.pythonanywhere.com
           FLASK_FILE: .github/scripts/flask_app.py
+          TG_CHANNEL_TOKEN: ${{ secrets.TELEGRAM_CHANNEL_TOKEN }}
