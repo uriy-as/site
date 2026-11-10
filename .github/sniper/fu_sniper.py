@@ -29,8 +29,11 @@ def set_state_dir(d):
 fh_sniper.set_state_dir = set_state_dir
 
 
+_orig_tg_send = fh_sniper.tg_send
+
+
 def tg_send(text):
-    fh_sniper.tg_send("[Freelance.ua] " + text)
+    _orig_tg_send("[Freelance.ua] " + text)
 
 
 fh_sniper.tg_send = tg_send
