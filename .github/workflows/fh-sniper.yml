@@ -42,14 +42,16 @@ jobs:
 
       - name: Run sniper
         if: ${{ !inputs.test }}
-        run: python3 .github/sniper/fh_sniper.py --state "$GITHUB_WORKSPACE"
+        run: |
+          python3 .github/sniper/fh_sniper.py --state "$GITHUB_WORKSPACE"
+          python3 .github/sniper/fu_sniper.py --state "$GITHUB_WORKSPACE"
 
       - name: Save state
         if: ${{ !inputs.test }}
         run: |
           git config user.name "Sniper Bot"
           git config user.email "sniper@uriy-as.org"
-          git add fh_sniper_seen.json fh_sniper_bids.json 2>/dev/null || true
+          git add fh_sniper_seen.json fh_sniper_bids.json fu_sniper_seen.json fu_sniper_bids.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "no state change"
           else
