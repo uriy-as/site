@@ -1262,7 +1262,23 @@ TG_POSTS_STATE_URL = 'https://raw.githubusercontent.com/uriy-as/site/main/.githu
 TG_POSTS_CACHE = '/home/Astap/mysite/posts.json'
 TG_POST_STATE_FILE = '/home/Astap/mysite/tg_posts_state.json'
 TG_CHANNEL = os.environ.get('TG_CHANNEL', '@webstudio_chanel')
+TG_CHANNEL_TOKEN_FILE = '/home/Astap/mysite/.tg_channel_token'
 TG_POST_ALLOWED_WEEKDAYS = {0, 2, 4}  # 0=Пн, 2=Ср, 4=Пт
+
+
+def _load_tg_channel_token():
+    """Резервный токен канала (старый бот): из окружения или файла на сервере."""
+    t = os.environ.get('TG_CHANNEL_TOKEN', '')
+    if t:
+        return t
+    try:
+        with open(TG_CHANNEL_TOKEN_FILE) as f:
+            t = f.read().strip()
+        if t:
+            return t
+    except FileNotFoundError:
+        pass
+    return ''
 
 try:
     from zoneinfo import ZoneInfo
@@ -1391,7 +1407,7 @@ def api_tg_post():
                         'post_id': post_id, 'title': title,
                         'used': len(used), 'total': len(posts),
                         'text_preview': text[:200]})
-    tokens = [t for t in (TELEGRAM_TOKEN, os.environ.get('TG_CHANNEL_TOKEN', '')) if t]
+    tokens = [t for t in (TELEGRAM_TOKEN, _load_tg_channel_token()) if t]
     if not tokens:
         return jsonify({'ok': False, 'error': 'TG_BOT_TOKEN не задан'}), 503
     last_err = ''
