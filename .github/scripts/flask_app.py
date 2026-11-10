@@ -1359,15 +1359,27 @@ def _save_tg_post_state(st):
     save_json(TG_POST_STATE_FILE, st)
 
 
+def _tg_post_key_ok(provided):
+    """Ключ эндпоинта: DIAG_KEY, TG_POST_KEY из окружения или токен бота.
+
+    Токен бота принимаем, чтобы GitHub Actions мог дёргать эндпоинт через
+    уже существующий секрет TELEGRAM_TOKEN, не заводя новый.
+    """
+    if not provided:
+        return False
+    return provided in {DIAG_KEY, os.environ.get('TG_POST_KEY', ''), TELEGRAM_TOKEN}
+
+
 @app.route('/api/tg-post', methods=['GET', 'POST'])
 def api_tg_post():
     """Отправка поста из posts.json в @webstudio_chanel.
 
     Только Пн/Ср/Пт, один пост в день, без повторов в текущем цикле.
-    Ключ: ?key=DIAG_KEY (или переменная окружения TG_POST_KEY).
+    Ключ: ?key=..., заголовок X-TG-Post-Key, DIAG_KEY, TG_POST_KEY или токен бота.
     Отладка: ?dry=1 — показать пост без отправки, ?force=1 — игнорировать день и дубль.
     """
-    if request.args.get('key') != (os.environ.get('TG_POST_KEY', '') or DIAG_KEY):
+    provided_key = request.args.get('key') or request.headers.get('X-TG-Post-Key') or ''
+    if not _tg_post_key_ok(provided_key):
         abort(403)
     now = _tg_post_now()
     today = now.strftime('%Y-%m-%d')
