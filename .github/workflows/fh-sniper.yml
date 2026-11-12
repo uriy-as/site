@@ -1,4 +1,4 @@
-name: Freelancehunt Sniper
+﻿name: Freelancehunt Sniper
 
 on:
   schedule:
@@ -37,7 +37,7 @@ jobs:
         run: |
           if git ls-remote --exit-code --heads origin sniper-state >/dev/null 2>&1; then
             git fetch origin sniper-state
-            git checkout origin/sniper-state -- fh_sniper_seen.json fh_sniper_bids.json 2>/dev/null || true
+            git checkout origin/sniper-state -- fh_sniper_seen.json fh_sniper_bids.json fu_sniper_seen.json fu_sniper_bids.json 2>/dev/null || true
           fi
 
       - name: Run sniper

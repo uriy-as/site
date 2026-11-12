@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Sniper для freelance.ua — обгортка над fh_sniper (окремий state, фільтри)."""
+<<<<<<< HEAD
 import os, sys
+=======
+import os
+import sys
+
+>>>>>>> 9dd536b (Fix sniper duplicates: restore fu state in workflow and isolate fu_sniper state)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fh_sniper
 
@@ -18,6 +24,11 @@ fh_sniper.EXCLUDE_CAT = {
     "Копирайтинг", "Логотипы", "3D", "Дизайн интерфейсов",
 }
 
+<<<<<<< HEAD
+=======
+BASE = os.path.dirname(os.path.abspath(__file__))
+
+>>>>>>> 9dd536b (Fix sniper duplicates: restore fu state in workflow and isolate fu_sniper state)
 
 def set_state_dir(d):
     os.makedirs(d, exist_ok=True)
@@ -27,6 +38,11 @@ def set_state_dir(d):
 
 
 fh_sniper.set_state_dir = set_state_dir
+<<<<<<< HEAD
+=======
+# По умолчанию freelance.ua использует отдельные state-файлы, если --state не передан.
+set_state_dir(BASE)
+>>>>>>> 9dd536b (Fix sniper duplicates: restore fu state in workflow and isolate fu_sniper state)
 
 
 _orig_tg_send = fh_sniper.tg_send
@@ -40,3 +56,7 @@ fh_sniper.tg_send = tg_send
 
 if __name__ == "__main__":
     fh_sniper.main()
+<<<<<<< HEAD
+=======
+
+>>>>>>> 9dd536b (Fix sniper duplicates: restore fu state in workflow and isolate fu_sniper state)
