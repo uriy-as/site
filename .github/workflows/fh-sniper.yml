@@ -43,8 +43,8 @@ jobs:
       - name: Run sniper
         if: ${{ !inputs.test }}
         run: |
-          python3 .github/sniper/fh_sniper.py --state "$GITHUB_WORKSPACE"
-          python3 .github/sniper/fu_sniper.py --state "$GITHUB_WORKSPACE"
+          python3 .github/sniper/fh_sniper.py --state "$GITHUB_WORKSPACE" || echo "fh_sniper failed"
+          python3 .github/sniper/fu_sniper.py --state "$GITHUB_WORKSPACE" || echo "fu_sniper failed"
 
       - name: Save state
         if: ${{ !inputs.test }}
