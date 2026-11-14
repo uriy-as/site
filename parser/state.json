@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-13T15:32:50+00:00",
+  "updated": "2026-11-14T14:22:35+00:00",
   "sources": {
     "Zharkov.dev": {
       "prices": [
@@ -52,7 +52,7 @@
           "raw": "$20"
         }
       ],
-      "checked_at": "2026-11-13T15:32:36+00:00",
+      "checked_at": "2026-11-14T14:22:20+00:00",
       "url": "https://zharkov.dev/services/telegram-bots"
     },
     "MaxWeb": {
@@ -106,7 +106,7 @@
           "raw": "5 000 ₴"
         }
       ],
-      "checked_at": "2026-11-13T15:32:40+00:00",
+      "checked_at": "2026-11-14T14:22:24+00:00",
       "url": "https://maxweb.com.ua/price"
     },
     "Web-Lift": {
@@ -124,7 +124,7 @@
           "raw": "$300"
         }
       ],
-      "checked_at": "2026-11-13T15:32:43+00:00",
+      "checked_at": "2026-11-14T14:22:28+00:00",
       "url": "https://web-lift.com/rozrobka-telegram-botiv/"
     },
     "SUDUS": {
@@ -143,6 +143,12 @@
         },
         {
           "label": "Корпоративный сайт",
+          "value": 35000.0,
+          "currency": "UAH",
+          "raw": "35 000 грн."
+        },
+        {
+          "label": "Корпоративный сайт",
           "value": 18000.0,
           "currency": "UAH",
           "raw": "18 000 грн"
@@ -152,6 +158,12 @@
           "value": 35000.0,
           "currency": "UAH",
           "raw": "35 000 грн"
+        },
+        {
+          "label": "Интернет-магазин до 5 000 товаров",
+          "value": 60000.0,
+          "currency": "UAH",
+          "raw": "60 000 грн"
         },
         {
           "label": "Сайт-каталог без оплаты",
@@ -244,43 +256,31 @@
           "raw": "4 000 грн"
         },
         {
-          "label": "SEO-продвижение — базовый пакет",
+          "label": "Локальное SEO — пакет LOCAL",
           "value": 4500.0,
           "currency": "UAH",
           "raw": "4 500 грн"
         },
         {
-          "label": "SEO-продвижение — оптимальный пакет",
+          "label": "Коммерческое SEO — пакет COMMERCIAL",
           "value": 9000.0,
           "currency": "UAH",
           "raw": "9 000 грн"
         },
         {
-          "label": "SEO-продвижение — премиум пакет",
+          "label": "Корпоративное SEO — пакет ENTERPRISE",
           "value": 18000.0,
           "currency": "UAH",
           "raw": "18 000 грн"
         },
         {
-          "label": "Локальное SEO (Google Business Profile)",
+          "label": "Профиль в Google Maps и отзывы",
           "value": 2500.0,
           "currency": "UAH",
           "raw": "2 500 грн"
-        },
-        {
-          "label": "Написание SEO-текстов",
-          "value": 250.0,
-          "currency": "UAH",
-          "raw": "250 грн"
-        },
-        {
-          "label": "CRM под ключ (стандартный пакет)",
-          "value": 50000.0,
-          "currency": "UAH",
-          "raw": "50 000 грн"
         }
       ],
-      "checked_at": "2026-11-13T15:32:46+00:00",
+      "checked_at": "2026-11-14T14:22:31+00:00",
       "url": "https://sudus.team/ru/prices"
     },
     "Web24": {
@@ -304,7 +304,7 @@
           "raw": "48000 грн"
         }
       ],
-      "checked_at": "2026-11-13T15:32:50+00:00",
+      "checked_at": "2026-11-14T14:22:35+00:00",
       "url": "https://web24.com.ua/price-list/"
     },
     "PAS7 Studio": {
