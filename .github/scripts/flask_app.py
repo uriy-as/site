@@ -1385,6 +1385,8 @@ def api_tg_post():
     today = now.strftime('%Y-%m-%d')
     force = request.args.get('force') == '1'
     dry = request.args.get('dry') == '1'
+    commit = request.args.get('commit') == '1'
+    commit_hash = request.args.get('hash', '')
     if not force and now.weekday() not in TG_POST_ALLOWED_WEEKDAYS:
         return jsonify({'ok': False, 'skipped': 'day', 'date': today,
                         'weekday': now.weekday(),
@@ -1393,6 +1395,38 @@ def api_tg_post():
     if not posts:
         return jsonify({'ok': False, 'error': 'posts.json недоступен или пуст'}), 503
     st = _load_tg_post_state(posts)
+    if commit:
+        if not commit_hash:
+            return jsonify({'ok': False, 'error': 'hash обязателен для commit'}), 400
+        if st.get('last_date') == today and st.get('last_hash') == commit_hash:
+            return jsonify({'ok': True, 'committed': True, 'already': True, 'date': today,
+                            'post_id': st.get('last_post_id', ''), 'title': st.get('last_title', '')})
+        pick_commit = None
+        for p in posts:
+            text_c = p[2] if isinstance(p, list) else p
+            if _tg_post_hash(text_c) == commit_hash:
+                pick_commit = p
+                break
+        if pick_commit is None:
+            return jsonify({'ok': False, 'error': 'пост с таким hash не найден'}), 404
+        text_c = pick_commit[2] if isinstance(pick_commit, list) else pick_commit
+        title_c = pick_commit[1] if isinstance(pick_commit, list) and len(pick_commit) > 1 else ''
+        post_id_c = pick_commit[0] if isinstance(pick_commit, list) and len(pick_commit) > 0 else ''
+        st.setdefault('used', [])
+        if commit_hash not in st['used']:
+            st['used'].append(commit_hash)
+        st['cycle'] = int(st.get('cycle', 1))
+        st['last_date'] = today
+        st['last_title'] = title_c
+        st['last_post_id'] = post_id_c
+        st['last_hash'] = commit_hash
+        st['last_ts'] = now.strftime('%Y-%m-%d %H:%M:%S')
+        _save_tg_post_state(st)
+        send_tg(f'<b>📢 Пост в {TG_CHANNEL}</b>\n{html.escape(title_c)}\n'
+                f'<a href="https://astap.pythonanywhere.com/stats?key={DIAG_KEY}">📊 Статистика</a>')
+        return jsonify({'ok': True, 'committed': True, 'date': today, 'cycle': st['cycle'],
+                        'post_id': post_id_c, 'title': title_c,
+                        'used': len(st['used']), 'total': len(posts)})
     if not force and st.get('last_date') == today:
         return jsonify({'ok': False, 'skipped': 'already_today', 'date': today,
                         'last_title': st.get('last_title', '')})
@@ -1414,11 +1448,12 @@ def api_tg_post():
     text = pick[2] if isinstance(pick, list) else pick
     title = pick[1] if isinstance(pick, list) and len(pick) > 1 else ''
     post_id = pick[0] if isinstance(pick, list) and len(pick) > 0 else ''
+    post_hash = _tg_post_hash(text)
     if dry:
         return jsonify({'ok': True, 'dry': True, 'date': today, 'cycle': cycle,
-                        'post_id': post_id, 'title': title,
+                        'post_id': post_id, 'title': title, 'hash': post_hash,
                         'used': len(used), 'total': len(posts),
-                        'text_preview': text[:200]})
+                        'text': text, 'text_preview': text[:200]})
     tokens = [t for t in (TELEGRAM_TOKEN, _load_tg_channel_token()) if t]
     if not tokens:
         return jsonify({'ok': False, 'error': 'TG_BOT_TOKEN не задан'}), 503
@@ -1440,11 +1475,12 @@ def api_tg_post():
     if not sent:
         send_tg(f'<b>❌ Не удалось отправить пост</b>\n{html.escape(title)}\n{html.escape(last_err)}')
         return jsonify({'ok': False, 'error': last_err}), 502
-    st.setdefault('used', []).append(_tg_post_hash(text))
+    st.setdefault('used', []).append(post_hash)
     st['cycle'] = cycle
     st['last_date'] = today
     st['last_title'] = title
     st['last_post_id'] = post_id
+    st['last_hash'] = post_hash
     st['last_ts'] = now.strftime('%Y-%m-%d %H:%M:%S')
     _save_tg_post_state(st)
     send_tg(f'<b>📢 Пост в {TG_CHANNEL}</b>\n{html.escape(title)}\n'

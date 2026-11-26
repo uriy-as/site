@@ -21,16 +21,91 @@ jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
-      - name: Call /api/tg-post
+      - name: Select, send, commit TG post
         env:
           KEY: ${{ secrets.TELEGRAM_TOKEN }}
+          TG_CHANNEL_TOKEN: ${{ secrets.TELEGRAM_CHANNEL_TOKEN }}
           DRY: ${{ inputs.dry == true && '1' || '' }}
           FORCE: ${{ inputs.force == true && '1' || '' }}
         run: |
-          code=$(curl -sS -m 60 -o /tmp/tg-post.json -w "%{http_code}" \
-            -H "X-TG-Post-Key: ${KEY}" \
-            "https://astap.pythonanywhere.com/api/tg-post?dry=${DRY}&force=${FORCE}" || true)
-          echo "HTTP $code"
-          cat /tmp/tg-post.json || true
-          echo
-          [ "$code" -ge 200 ] && [ "$code" -lt 300 ]
+          python3 - <<'PY'
+          import json, os, sys, urllib.request, urllib.parse
+
+          KEY = os.environ.get('KEY', '')
+          CHANNEL_TOKEN = os.environ.get('TG_CHANNEL_TOKEN', '')
+          DRY = os.environ.get('DRY', '')
+          FORCE = os.environ.get('FORCE', '')
+          BASE = 'https://astap.pythonanywhere.com/api/tg-post'
+          CHANNEL = '@webstudio_chanel'
+
+          def call(url, timeout=60):
+              req = urllib.request.Request(url, headers={'X-TG-Post-Key': KEY, 'User-Agent': 'tg-post-trigger/1.0'})
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as r:
+                      body = r.read().decode('utf-8', 'replace')
+                      return r.status, body
+              except urllib.error.HTTPError as e:
+                  body = e.read().decode('utf-8', 'replace')
+                  return e.code, body
+              except Exception as e:
+                  return 0, str(e)
+
+          qs = urllib.parse.urlencode({'dry': '1', 'force': FORCE})
+          status, body = call(f'{BASE}?{qs}')
+          print(f'HTTP {status}')
+          print(body)
+          if status < 200 or status >= 300:
+              sys.exit(1)
+          data = json.loads(body)
+          if not data.get('ok'):
+              if data.get('skipped') in ('day', 'already_today'):
+                  print('SKIPPED', data.get('skipped'))
+                  sys.exit(0)
+              print('ERROR', data)
+              sys.exit(1)
+          if DRY == '1':
+              print('DRY RUN - no send')
+              sys.exit(0)
+
+          text = data.get('text') or ''
+          post_hash = data.get('hash') or ''
+          title = data.get('title') or ''
+          if not text or not post_hash:
+              print('Missing text/hash in preview response')
+              sys.exit(1)
+
+          tokens = [t for t in [KEY, CHANNEL_TOKEN] if t]
+          last_err = ''
+          sent = False
+          for token in tokens:
+              payload = json.dumps({'chat_id': CHANNEL, 'text': text, 'parse_mode': 'HTML'}).encode('utf-8')
+              req = urllib.request.Request(
+                  f'https://api.telegram.org/bot{token}/sendMessage',
+                  data=payload,
+                  headers={'Content-Type': 'application/json', 'User-Agent': 'tg-post-trigger/1.0'},
+                  method='POST',
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as r:
+                      tg = json.loads(r.read().decode('utf-8', 'replace'))
+              except Exception as e:
+                  last_err = str(e)[:300]
+                  continue
+              if tg.get('ok'):
+                  sent = True
+                  break
+              last_err = str(tg.get('description') or tg)[:300]
+
+          if not sent:
+              print('SEND FAILED', last_err)
+              sys.exit(1)
+
+          qs2 = urllib.parse.urlencode({'commit': '1', 'hash': post_hash, 'force': FORCE})
+          status2, body2 = call(f'{BASE}?{qs2}')
+          print(f'COMMIT HTTP {status2}')
+          print(body2)
+          if status2 < 200 or status2 >= 300:
+              print('Commit failed after successful Telegram send')
+              sys.exit(1)
+          print('SENT', title)
+          PY
